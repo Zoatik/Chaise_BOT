@@ -1,6 +1,7 @@
 from Bots.ChessBotList import register_chess_bot
 
 import time
+import math
 
 def minMaxBot(player_sequence, board, time_budget, **kwargs):
     startTime = time.time()
@@ -16,7 +17,10 @@ def minMaxBot(player_sequence, board, time_budget, **kwargs):
     # the y axis is the horizontal one
     # both starting at (0, 0) in the bottom right of our board.
 
-    color = player_sequence[1]
+    our_color = player_sequence[1]
+    enemy_color = "w" if our_color != "w" else "b"
+
+    def minMax(board, depth, maximizing_player):
 
     basePieceValues = {
         "p" : 1,
@@ -215,43 +219,68 @@ def minMaxBot(player_sequence, board, time_budget, **kwargs):
 
     moveValues = dict(baseMoveValues)
 
-    everyPieceBestMove = []
+            everyPossibleMove = []
 
-    # Scans every cell on the board.
-    for x in range(board.shape[0]):
-        for y in range(board.shape[1]):
-            # If current cell does not contain anything or is
-            #  invalide, move to the next iteration of y.
-            if board[x,y]=="" or board[x,y]=="X":
-                continue
-            # We now presume that we have landed on a valid cell
-            # that contins a piece, we can reach board[x,y][1]
-            # without any issues.
-            if board[x,y][1]!=color:
-                continue
+            # Scans every cell on the board.
+            for x in range(board.shape[0]):
+                for y in range(board.shape[1]):
+                    # If current cell does not contain anything or is
+                    #  invalide, move to the next iteration of y.
+                    if board[x,y]=="" or board[x,y]=="X":
+                        continue
+                    # We now presume that we have landed on a valid cell
+                    # that contins a piece, we can reach board[x,y][1]
+                    # without any issues.
+                    if board[x,y][1]!=color:
+                        continue
 
 
-            def isInBounds(x,y):
-                if x < 0 or x > 7:
-                    return False
-                if y < 0 or y > 7:
-                    return False
-                return True
+                    def isInBounds(x,y):
+                        if x < 0 or x > 7:
+                            return False
+                        if y < 0 or y > 7:
+                            return False
+                        return True
 
-            # We now find ourselves on a cell containing one
-            # of our pieces.
+                    # We now find ourselves on a cell containing one
+                    # of our pieces.
 
-            # All moves getter:
-            # return an array of arrays composed of a move score
-            # as well as the move it's self.
-            # This score will later be used by minMax to
-            # determine which is the best move for our game.
-            def getAllMoves():
-                allMoves = []
-                match board[x,y][0]:
-                    case "p":
+                    # All moves getter:
+                    # return an array of arrays composed of a move score
+                    # as well as the move it's self.
+                    # This score will later be used by minMax to
+                    # determine which is the best move for our game.
+                    def getAllSinglePieceMoves(board):
+                        allMoves = []
+                        match board[x,y][0]:
+                            case "p":
+                                # print("Pawn")
+                                allMoves.extend( getPawnMoves(x,y)   )
+                            case "n":
+                                # print("Knight")
+                                allMoves.extend( getKnightMoves(x,y) )
+                            case "r":
+                                # print("Rook")
+                                allMoves.extend( getRookMoves(x,y)   )
+                            case "b":
+                                # print("Bishop")
+                                allMoves.extend( getBishopMoves(x,y) )
+                            case "q":
+                                # print("Queen")
+                                allMoves.extend( getQueenMoves(x,y)  )
+                            case "k":
+                                # print("King")
+                                allMoves.extend( getKingMoves(x,y)   )
+                            case _:
+                                print("Zis is not on of ours !")
+                                sys.exit("Stopping execution.")
+                        
+                        # print("All moves", allMoves)
+                        return allMoves
+                    
+                    def getPawnMoves(x, y):
                         mp_val = moveValues["mp"]
-                        print("////// Pawn //////")
+                        pawnMoves = []
                         # Queen upgrade ?
                         if x+1 == 7:
                             if board[x+1,y] == "":
@@ -508,34 +537,82 @@ def minMaxBot(player_sequence, board, time_budget, **kwargs):
                 return kingMoves
             
 
+                    allSinglePieceMoves = getAllSinglePieceMoves(board) # gets all the possible moves for the piece on the current cell.
 
-            allMoves = getAllMoves()
+                    everyPossibleMove.extend(allSinglePieceMoves) # adds these moves to the total current board possible moves
+                    
+            return everyPossibleMove # returns all the possible moves for the current board. format: [[score, startPos, destPos], [...]]
+            
+        def getMax(moves): # returns the move with the highest score.
+            highestScore = 0
+            highestIndex = 0
+            for index,value in enumerate(moves):
+                if value[0] > highestScore:
+                    highestScore = value[0]
+                    highestIndex = index
+            return moves[highestIndex]
+        
+        def getMin(moves): # idem lowest score.
+            lowestScore = math.inf
+            lowestIndex = 0
+            for index, value in enumerate(moves):
+                if value[0] < lowestScore:
+                    lowestScore = value[0]
+                    lowestIndex = index
+            return moves[lowestIndex]
+        
+        def createNewBoard(board, nextMove): # creates a new board from one move
+            new_board = board.copy()                    # Avoids modifying actual board
+            new_board[nextMove[2]] = board[nextMove[1]] # This moves the piece to it's dest.
+            new_board[nextMove[1]] = ""                 # The cell we moved from is now empty
+            return new_board
 
-            everyPieceBestMove.extend(allMoves)
-
+        # Recrusive stop
+        if depth == 1:
+            currentMoves = getAllMoves(board, our_color if maximizing_player else enemy_color)
+            if len(currentMoves) != 0:
+                finalMove = getMax(currentMoves)
+                # print("Final move : ", finalMove, " that took", time.time() - startTime, " seconds !")
+                return finalMove # old version where I used to give the final move instead of the score: finalMove[1], finalMove[2]
+            else:
+                return [0, (0,0), (0,0)]
+            
+        
             
 
-    def getMax(moves):
-        highestScore = 0
-        highestIndex = 0
-        for index,value in enumerate(moves):
-            if value[0] > highestScore:
-                highestScore = value[0]
-                highestIndex = index
-        return moves[highestIndex]
-    
-    def minMax(board, depth, maximizing_player):
-        if depth == 0:
-            #getMax()
-            print("yes")
-    
-    print("everyPieceBestMove : ", everyPieceBestMove)
-    if len(everyPieceBestMove) != 0:
-        finalMove = getMax(everyPieceBestMove)
-        print("Final move : ", finalMove, " that took", time.time() - startTime, " seconds !")
-        return finalMove[1], finalMove[2]
+        # /////////////////////////////////////////// CURRENT STATUS ///////////////////////////////////////////
+        # At the moment, this section is supposed to handle the recursive minMax but when the depth is set
+        # bigger than 1, then our pieces do not move. I think this is because we might be giving the
+        # enemy's move instead of our own.. which would make the move invalid and skip us.
+        #
+        # SO FIX IT !///////////////////////////////////////////////////////////////////////////////////////////
+        #
+        # Our turn
+        if maximizing_player:
+            bestMove = [-math.inf, (0,0), (0,0)]
+            for nextMove in getAllMoves(board, our_color):
+                new_board = createNewBoard(board, nextMove)             # Create new board with the chosen move
+                nextRecursiveMove = minMax(new_board, depth-1, False)   # gets the best move for that new board
+                bestMove = bestMove if bestMove[0] > nextRecursiveMove[0] else nextRecursiveMove # assigns the best move depending on it's score nextRecursiveMove[0] == "score".
+            return bestMove
+        # Enemy's turn
+        else:
+            bestMove = [math.inf, (0,0), (0,0)]
+            for nextMove in getAllMoves(board, enemy_color):
+                new_board = createNewBoard(board, nextMove)             # Create new board with the chosen move
+                nextRecursiveMove = minMax(new_board, depth-1, True)    # gets the best move for that new board
+                bestMove = bestMove if bestMove[0] < nextRecursiveMove[0] else nextRecursiveMove # assigns the best move depending on it's score nextRecursiveMove[0] == "score".
+            return bestMove
     
 
+
+    # Recursive call
+    optimalMove = minMax(board, 1, True) # Still contains [score, startingPos, destPos]
+    
+    if optimalMove != [0, (0,0), (0,0)]:
+        print("Final move for this board: ", optimalMove[1], " to -> ", optimalMove[2], ". This took:", time.time()-startTime, " seconds !")
+        return optimalMove[1], optimalMove[2]
+    
     return (0,0), (0,0)
 
 
