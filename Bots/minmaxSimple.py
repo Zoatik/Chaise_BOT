@@ -20,8 +20,6 @@ def minMaxBot(player_sequence, board, time_budget, **kwargs):
     our_color = player_sequence[1]
     enemy_color = "w" if our_color != "w" else "b"
 
-    def minMax(board, depth, maximizing_player):
-
     basePieceValues = {
         "p" : 1,
         "n" : 3.2,
@@ -215,394 +213,318 @@ def minMaxBot(player_sequence, board, time_budget, **kwargs):
                     count += 1
         return count
 
-    enemies_remaining = count_enemies(board, color)
+    def getAllMoves(board, color):
+        enemies_remaining = count_enemies(board, color)
+        moveValues = dict(baseMoveValues)
+        everyPossibleMove = []
 
-    moveValues = dict(baseMoveValues)
+        def isInBounds(x, y):
+            if x < 0 or x > 7:
+                return False
+            if y < 0 or y > 7:
+                return False
+            return True
 
-            everyPossibleMove = []
+        def getPawnMoves(x, y):
+            mp_val = moveValues["mp"]
+            pawnMoves = []
+            if x + 1 > 7:
+                return pawnMoves
+            # Queen upgrade ?
+            if x + 1 == 7 and board[x + 1, y] == "":
+                promo_bonus = (
+                    piece_pos_bonus("q", (x + 1, y), enemies_remaining)
+                    - piece_pos_bonus("p", (x, y), enemies_remaining)
+                )
+                pawnMoves.append([moveValues["pup"] + promo_bonus, (x, y), (x + 1, y)])
+            # Move forwards ?
+            elif board[x + 1, y] == "":
+                bonus = move_pos_delta("p", (x, y), (x + 1, y), enemies_remaining)
+                pawnMoves.append([mp_val + bonus, (x, y), (x + 1, y)])
+            # Diag attacks ?
+            if y + 1 <= 7:
+                if board[x + 1, y + 1] != "" and board[x + 1, y + 1] != "X":
+                    if board[x + 1, y + 1][1] != color:
+                        bonus = move_pos_delta("p", (x, y), (x + 1, y + 1), enemies_remaining)
+                        pawnMoves.append([
+                            moveValues["t" + board[x + 1, y + 1][0]] + mp_val + bonus,
+                            (x, y),
+                            (x + 1, y + 1)
+                        ])
+            if y - 1 >= 0:
+                if board[x + 1, y - 1] != "" and board[x + 1, y - 1] != "X":
+                    if board[x + 1, y - 1][1] != color:
+                        bonus = move_pos_delta("p", (x, y), (x + 1, y - 1), enemies_remaining)
+                        pawnMoves.append([
+                            moveValues["t" + board[x + 1, y - 1][0]] + mp_val + bonus,
+                            (x, y),
+                            (x + 1, y - 1)
+                        ])
+            return pawnMoves
 
-            # Scans every cell on the board.
-            for x in range(board.shape[0]):
-                for y in range(board.shape[1]):
-                    # If current cell does not contain anything or is
-                    #  invalide, move to the next iteration of y.
-                    if board[x,y]=="" or board[x,y]=="X":
-                        continue
-                    # We now presume that we have landed on a valid cell
-                    # that contins a piece, we can reach board[x,y][1]
-                    # without any issues.
-                    if board[x,y][1]!=color:
-                        continue
+        def getKnightMoves(x, y):
+            mn_val = moveValues["mn"]
+            knightMoves = []
+            potentialMoves = [
+                (x + 2, y + 1),
+                (x + 2, y - 1),
+                (x - 2, y + 1),
+                (x - 2, y - 1),
+                (x + 1, y + 2),
+                (x + 1, y - 2),
+                (x - 1, y + 2),
+                (x - 1, y - 2)
+            ]
+            for move in potentialMoves:
+                if isInBounds(move[0], move[1]):
+                    if board[move[0], move[1]] == "" :
+                        bonus = move_pos_delta("n", (x, y), (move[0], move[1]), enemies_remaining)
+                        knightMoves.append([mn_val + bonus, (x, y), (move[0], move[1])])
+                    elif board[move[0], move[1]] == "X":
+                        pass
+                    elif board[move[0], move[1]][1] != color:
+                        bonus = move_pos_delta("n", (x, y), (move[0], move[1]), enemies_remaining)
+                        knightMoves.append([
+                            moveValues["t" + board[move[0], move[1]][0]] + mn_val + bonus,
+                            (x, y),
+                            (move[0], move[1])
+                        ])
+            return knightMoves
 
+        def getRookMoves(x, y, isQueen=False):
+            rookMoves = []
+            mr_val = moveValues["mr"] if not isQueen else moveValues["mq"]
+            piece = "q" if isQueen else "r"
+            # Up
+            for i in range(x + 1, 8):
+                if board[i, y] == "":
+                    bonus = move_pos_delta(piece, (x, y), (i, y), enemies_remaining)
+                    rookMoves.append([mr_val + bonus, (x, y), (i, y)])
+                elif board[i, y] == "X":
+                    break
+                elif board[i, y][1] != color:
+                    bonus = move_pos_delta(piece, (x, y), (i, y), enemies_remaining)
+                    rookMoves.append([moveValues["t" + board[i, y][0]] + mr_val + bonus, (x, y), (i, y)])
+                    break
+                else:
+                    break
+            # Down
+            for i in range(x - 1, -1, -1):
+                if board[i, y] == "":
+                    bonus = move_pos_delta(piece, (x, y), (i, y), enemies_remaining)
+                    rookMoves.append([mr_val + bonus, (x, y), (i, y)])
+                elif board[i, y] == "X":
+                    break
+                elif board[i, y][1] != color:
+                    bonus = move_pos_delta(piece, (x, y), (i, y), enemies_remaining)
+                    rookMoves.append([moveValues["t" + board[i, y][0]] + mr_val + bonus, (x, y), (i, y)])
+                    break
+                else:
+                    break
+            # Right
+            for j in range(y + 1, 8):
+                if board[x, j] == "":
+                    bonus = move_pos_delta(piece, (x, y), (x, j), enemies_remaining)
+                    rookMoves.append([mr_val + bonus, (x, y), (x, j)])
+                elif board[x, j] == "X":
+                    break
+                elif board[x, j][1] != color:
+                    bonus = move_pos_delta(piece, (x, y), (x, j), enemies_remaining)
+                    rookMoves.append([moveValues["t" + board[x, j][0]] + mr_val + bonus, (x, y), (x, j)])
+                    break
+                else:
+                    break
+            # Left
+            for j in range(y - 1, -1, -1):
+                if board[x, j] == "":
+                    bonus = move_pos_delta(piece, (x, y), (x, j), enemies_remaining)
+                    rookMoves.append([mr_val + bonus, (x, y), (x, j)])
+                elif board[x, j] == "X":
+                    break
+                elif board[x, j][1] != color:
+                    bonus = move_pos_delta(piece, (x, y), (x, j), enemies_remaining)
+                    rookMoves.append([moveValues["t" + board[x, j][0]] + mr_val + bonus, (x, y), (x, j)])
+                    break
+                else:
+                    break
+            return rookMoves
 
-                    def isInBounds(x,y):
-                        if x < 0 or x > 7:
-                            return False
-                        if y < 0 or y > 7:
-                            return False
-                        return True
+        def getBishopMoves(x, y, isQueen=False):
+            mb_val = moveValues["mb"] if not isQueen else moveValues["mq"]
+            bishopMoves = []
+            piece = "q" if isQueen else "b"
+            # Up-Right
+            i, j = x + 1, y + 1
+            while isInBounds(i, j):
+                if board[i, j] == "":
+                    bonus = move_pos_delta(piece, (x, y), (i, j), enemies_remaining)
+                    bishopMoves.append([mb_val + bonus, (x, y), (i, j)])
+                elif board[i, j] == "X":
+                    break
+                elif board[i, j][1] != color:
+                    bonus = move_pos_delta(piece, (x, y), (i, j), enemies_remaining)
+                    bishopMoves.append([moveValues["t" + board[i, j][0]] + mb_val + bonus, (x, y), (i, j)])
+                    break
+                else:
+                    break
+                i += 1
+                j += 1
+            # Up-Left
+            i, j = x + 1, y - 1
+            while isInBounds(i, j):
+                if board[i, j] == "":
+                    bonus = move_pos_delta(piece, (x, y), (i, j), enemies_remaining)
+                    bishopMoves.append([mb_val + bonus, (x, y), (i, j)])
+                elif board[i, j] == "X":
+                    break
+                elif board[i, j][1] != color:
+                    bonus = move_pos_delta(piece, (x, y), (i, j), enemies_remaining)
+                    bishopMoves.append([moveValues["t" + board[i, j][0]] + mb_val + bonus, (x, y), (i, j)])
+                    break
+                else:
+                    break
+                i += 1
+                j -= 1
+            # Down-Right
+            i, j = x - 1, y + 1
+            while isInBounds(i, j):
+                if board[i, j] == "":
+                    bonus = move_pos_delta(piece, (x, y), (i, j), enemies_remaining)
+                    bishopMoves.append([mb_val + bonus, (x, y), (i, j)])
+                elif board[i, j] == "X":
+                    break
+                elif board[i, j][1] != color:
+                    bonus = move_pos_delta(piece, (x, y), (i, j), enemies_remaining)
+                    bishopMoves.append([moveValues["t" + board[i, j][0]] + mb_val + bonus, (x, y), (i, j)])
+                    break
+                else:
+                    break
+                i -= 1
+                j += 1
+            # Down-Left
+            i, j = x - 1, y - 1
+            while isInBounds(i, j):
+                if board[i, j] == "":
+                    bonus = move_pos_delta(piece, (x, y), (i, j), enemies_remaining)
+                    bishopMoves.append([mb_val + bonus, (x, y), (i, j)])
+                elif board[i, j] == "X":
+                    break
+                elif board[i, j][1] != color:
+                    bonus = move_pos_delta(piece, (x, y), (i, j), enemies_remaining)
+                    bishopMoves.append([moveValues["t" + board[i, j][0]] + mb_val + bonus, (x, y), (i, j)])
+                    break
+                else:
+                    break
+                i -= 1
+                j -= 1
+            return bishopMoves
 
-                    # We now find ourselves on a cell containing one
-                    # of our pieces.
+        def getQueenMoves(x, y):
+            queenMoves = []
+            queenMoves.extend(getRookMoves(x, y, isQueen=True))
+            queenMoves.extend(getBishopMoves(x, y, isQueen=True))
+            return queenMoves
 
-                    # All moves getter:
-                    # return an array of arrays composed of a move score
-                    # as well as the move it's self.
-                    # This score will later be used by minMax to
-                    # determine which is the best move for our game.
-                    def getAllSinglePieceMoves(board):
-                        allMoves = []
-                        match board[x,y][0]:
-                            case "p":
-                                # print("Pawn")
-                                allMoves.extend( getPawnMoves(x,y)   )
-                            case "n":
-                                # print("Knight")
-                                allMoves.extend( getKnightMoves(x,y) )
-                            case "r":
-                                # print("Rook")
-                                allMoves.extend( getRookMoves(x,y)   )
-                            case "b":
-                                # print("Bishop")
-                                allMoves.extend( getBishopMoves(x,y) )
-                            case "q":
-                                # print("Queen")
-                                allMoves.extend( getQueenMoves(x,y)  )
-                            case "k":
-                                # print("King")
-                                allMoves.extend( getKingMoves(x,y)   )
-                            case _:
-                                print("Zis is not on of ours !")
-                                sys.exit("Stopping execution.")
-                        
-                        # print("All moves", allMoves)
-                        return allMoves
-                    
-                    def getPawnMoves(x, y):
-                        mp_val = moveValues["mp"]
-                        pawnMoves = []
-                        # Queen upgrade ?
-                        if x+1 == 7:
-                            if board[x+1,y] == "":
-                                # print("PAWN UPGRADE")
-                                promo_bonus = (
-                                    piece_pos_bonus("q", (x+1, y), enemies_remaining)
-                                    - piece_pos_bonus("p", (x, y), enemies_remaining)
-                                )
-                                allMoves.append([moveValues["pup"] + promo_bonus, (x,y), (x+1,y)])
-                        # Move forwards ?
-                        else:
-                            if board[x+1,y] == "":
-                                # print("PAWN MOVED FORWARDS")
-                                bonus = move_pos_delta("p", (x,y), (x+1,y), enemies_remaining)
-                                allMoves.append([mp_val + bonus, (x,y), (x+1,y)])
-                        # Diag attacks ?
-                        if y + 1 <= 7:
-                            if board[x+1,y+1] == "" or board[x+1,y+1] == "X":
-                                pass
-                            elif board[x+1,y+1][1] != color:
-                                # print("PAWN ATTACKED")
-                                bonus = move_pos_delta("p", (x,y), (x+1,y+1), enemies_remaining)
-                                allMoves.append([moveValues["t"+board[x+1,y+1][0]] + mp_val + bonus, (x,y), (x+1,y+1)])
-                        if y - 1 >= 0:
-                            if board[x+1,y-1] == "" or board[x+1,y-1] == "X":
-                                pass
-                            elif board[x+1,y-1][1] != color:
-                                # print("PAWN ATTACKED")
-                                bonus = move_pos_delta("p", (x,y), (x+1,y-1), enemies_remaining)
-                                allMoves.append([moveValues["t"+board[x+1,y-1][0]] + mp_val + bonus, (x,y), (x+1,y-1)])
-                        
+        def getKingMoves(x, y):
+            mk_val = moveValues["mk"]
+            kingMoves = []
+            potentialMoves = [
+                (x + 1, y),
+                (x - 1, y),
+                (x, y + 1),
+                (x, y - 1),
+                (x + 1, y + 1),
+                (x + 1, y - 1),
+                (x - 1, y + 1),
+                (x - 1, y - 1)
+            ]
+            for move in potentialMoves:
+                if isInBounds(move[0], move[1]):
+                    if board[move[0], move[1]] == "" :
+                        bonus = move_pos_delta("k", (x, y), (move[0], move[1]), enemies_remaining)
+                        kingMoves.append([mk_val + bonus, (x, y), (move[0], move[1])])
+                    elif board[move[0], move[1]] == "X":
+                        pass
+                    elif board[move[0], move[1]][1] != color:
+                        bonus = move_pos_delta("k", (x, y), (move[0], move[1]), enemies_remaining)
+                        kingMoves.append([
+                            moveValues["t" + board[move[0], move[1]][0]] + mk_val + bonus,
+                            (x, y),
+                            (move[0], move[1])
+                        ])
+            return kingMoves
+
+        for x in range(board.shape[0]):
+            for y in range(board.shape[1]):
+                if board[x, y] == "" or board[x, y] == "X":
+                    continue
+                if board[x, y][1] != color:
+                    continue
+                match board[x, y][0]:
+                    case "p":
+                        everyPossibleMove.extend(getPawnMoves(x, y))
                     case "n":
-                        print("Knight")
-                        allMoves.extend( getKnightMoves(x,y) )
+                        everyPossibleMove.extend(getKnightMoves(x, y))
                     case "r":
-                        print("Rook")
-                        allMoves.extend( getRookMoves(x,y) )
+                        everyPossibleMove.extend(getRookMoves(x, y))
                     case "b":
-                        print("Bishop")
-                        allMoves.extend( getBishopMoves(x,y) )
+                        everyPossibleMove.extend(getBishopMoves(x, y))
                     case "q":
-                        print("Queen")
-                        allMoves.extend( getQueenMoves(x,y) )
+                        everyPossibleMove.extend(getQueenMoves(x, y))
                     case "k":
-                        print("King")
-                        allMoves.extend( getKingMoves(x,y) )
+                        everyPossibleMove.extend(getKingMoves(x, y))
                     case _:
-                        print("Zis is not on of ours !")
-                        sys.exit("Stopping execution.")
-                
-                print("All moves", allMoves)
-                return allMoves
-            
+                        pass
+        return everyPossibleMove
 
-            def getKnightMoves(x,y):
-                mn_val = moveValues["mn"]
-                knightMoves = []
-                potentialMoves = [
-                    (x+2, y+1),
-                    (x+2, y-1),
-                    (x-2, y+1),
-                    (x-2, y-1),
-                    (x+1, y+2),
-                    (x+1, y-2),
-                    (x-1, y+2),
-                    (x-1, y-2)
-                ]
-                for move in potentialMoves:
-                    if isInBounds(move[0], move[1]):
-                        if board[move[0], move[1]] == "" :
-                            bonus = move_pos_delta("n", (x,y), (move[0], move[1]), enemies_remaining)
-                            knightMoves.append([mn_val + bonus, (x,y), (move[0], move[1])])
-                        elif board[move[0], move[1]] == "X":
-                            pass
-                        elif board[move[0], move[1]][1] != color:
-                            bonus = move_pos_delta("n", (x,y), (move[0], move[1]), enemies_remaining)
-                            knightMoves.append([moveValues["t"+board[move[0], move[1]][0]] + mn_val + bonus, (x,y), (move[0], move[1])])
-                return knightMoves
             
-            def getRookMoves(x,y, isQueen=False):
-                rookMoves = []
-                mr_val = moveValues["mr"] if not isQueen else moveValues["mq"]
-                # Up
-                for i in range(x+1, 8):
-                    if board[i,y] == "":
-                        piece = "q" if isQueen else "r"
-                        bonus = move_pos_delta(piece, (x,y), (i,y), enemies_remaining)
-                        rookMoves.append([mr_val + bonus, (x,y), (i,y)])
-                    elif board[i,y] == "X":
-                        break
-                    elif board[i,y][1] != color:
-                        piece = "q" if isQueen else "r"
-                        bonus = move_pos_delta(piece, (x,y), (i,y), enemies_remaining)
-                        rookMoves.append([moveValues["t" + board[i,y][0]] + mr_val + bonus, (x,y), (i,y)])
-                        break
-                    else:
-                        break
-                # Down
-                for i in range(x-1, -1, -1):
-                    if board[i,y] == "":
-                        piece = "q" if isQueen else "r"
-                        bonus = move_pos_delta(piece, (x,y), (i,y), enemies_remaining)
-                        rookMoves.append([mr_val + bonus, (x,y), (i,y)])
-                    elif board[i,y] == "X":
-                        break
-                    elif board[i,y][1] != color:
-                        piece = "q" if isQueen else "r"
-                        bonus = move_pos_delta(piece, (x,y), (i,y), enemies_remaining)
-                        rookMoves.append([moveValues["t" + board[i,y][0]] + mr_val + bonus, (x,y), (i,y)])
-                        break
-                    else:
-                        break
-                # Right
-                for j in range(y+1, 8):
-                    if board[x,j] == "":
-                        piece = "q" if isQueen else "r"
-                        bonus = move_pos_delta(piece, (x,y), (x,j), enemies_remaining)
-                        rookMoves.append([mr_val + bonus, (x,y), (x,j)])
-                    elif board[x,j] == "X":
-                        break
-                    elif board[x,j][1] != color:
-                        piece = "q" if isQueen else "r"
-                        bonus = move_pos_delta(piece, (x,y), (x,j), enemies_remaining)
-                        rookMoves.append([moveValues["t" + board[x,j][0]] + mr_val + bonus, (x,y), (x,j)])
-                        break
-                    else:
-                        break
-                # Left
-                for j in range(y-1, -1, -1):
-                    if board[x,j] == "":
-                        piece = "q" if isQueen else "r"
-                        bonus = move_pos_delta(piece, (x,y), (x,j), enemies_remaining)
-                        rookMoves.append([mr_val + bonus, (x,y), (x,j)])
-                    elif board[x,j] == "X":
-                        break
-                    elif board[x,j][1] != color:
-                        piece = "q" if isQueen else "r"
-                        bonus = move_pos_delta(piece, (x,y), (x,j), enemies_remaining)
-                        rookMoves.append([moveValues["t" + board[x,j][0]] + mr_val + bonus, (x,y), (x,j)])
-                        break
-                    else:
-                        break
-                return rookMoves
-            
-            def getBishopMoves(x,y, isQueen=False):
-                mb_val = moveValues["mb"] if not isQueen else moveValues["mq"]
-                bishopMoves = [] 
-                # Up-Right
-                i, j = x+1, y+1
-                while isInBounds(i,j):
-                    if board[i,j] == "":
-                        piece = "q" if isQueen else "b"
-                        bonus = move_pos_delta(piece, (x,y), (i,j), enemies_remaining)
-                        bishopMoves.append([mb_val + bonus, (x,y), (i,j)])
-                    elif board[i,j] == "X":
-                        break
-                    elif board[i,j][1] != color:
-                        piece = "q" if isQueen else "b"
-                        bonus = move_pos_delta(piece, (x,y), (i,j), enemies_remaining)
-                        bishopMoves.append([moveValues["t" + board[i,j][0]] + mb_val + bonus, (x,y), (i,j)])
-                        break
-                    else:
-                        break
-                    i += 1
-                    j += 1
-                # Up-Left
-                i, j = x+1, y-1
-                while isInBounds(i,j):
-                    if board[i,j] == "":
-                        piece = "q" if isQueen else "b"
-                        bonus = move_pos_delta(piece, (x,y), (i,j), enemies_remaining)
-                        bishopMoves.append([mb_val + bonus, (x,y), (i,j)])
-                    elif board[i,j] == "X":
-                        break
-                    elif board[i,j][1] != color:
-                        piece = "q" if isQueen else "b"
-                        bonus = move_pos_delta(piece, (x,y), (i,j), enemies_remaining)
-                        bishopMoves.append([moveValues["t" + board[i,j][0]] + mb_val + bonus, (x,y), (i,j)])
-                        break
-                    else:
-                        break
-                    i += 1
-                    j -= 1
-                # Down-Right
-                i, j = x-1, y+1
-                while isInBounds(i,j):
-                    if board[i,j] == "":
-                        piece = "q" if isQueen else "b"
-                        bonus = move_pos_delta(piece, (x,y), (i,j), enemies_remaining)
-                        bishopMoves.append([mb_val + bonus, (x,y), (i,j)])
-                    elif board[i,j] == "X":
-                        break
-                    elif board[i,j][1] != color:
-                        piece = "q" if isQueen else "b"
-                        bonus = move_pos_delta(piece, (x,y), (i,j), enemies_remaining)
-                        bishopMoves.append([moveValues["t" + board[i,j][0]] + mb_val + bonus, (x,y), (i,j)])
-                        break
-                    else:
-                        break
-                    i -= 1
-                    j += 1
-                # Down-Left
-                i, j = x-1, y-1
-                while isInBounds(i,j):
-                    if board[i,j] == "":
-                        piece = "q" if isQueen else "b"
-                        bonus = move_pos_delta(piece, (x,y), (i,j), enemies_remaining)
-                        bishopMoves.append([mb_val + bonus, (x,y), (i,j)])
-                    elif board[i,j] == "X":
-                        break
-                    elif board[i,j][1] != color:
-                        piece = "q" if isQueen else "b"
-                        bonus = move_pos_delta(piece, (x,y), (i,j), enemies_remaining)
-                        bishopMoves.append([moveValues["t" + board[i,j][0]] + mb_val + bonus, (x,y), (i,j)])
-                        break
-                    else:
-                        break
-                    i -= 1
-                    j -= 1
-                return bishopMoves
-            
-            def getQueenMoves(x,y):
-                queenMoves = []
-                # Combine rook and bishop moves
-                # Rook-like moves
-                queenMoves.extend(getRookMoves(x,y, isQueen=True))
-                # Bishop-like moves
-                queenMoves.extend(getBishopMoves(x,y, isQueen=True))
-                return queenMoves
-            
-            def getKingMoves(x,y):
-                mk_val = moveValues["mk"]
-                kingMoves = []
-                potentialMoves = [
-                    (x+1, y),
-                    (x-1, y),
-                    (x, y+1),
-                    (x, y-1),
-                    (x+1, y+1),
-                    (x+1, y-1),
-                    (x-1, y+1),
-                    (x-1, y-1)
-                ]
-                for move in potentialMoves:
-                    if isInBounds(move[0], move[1]):
-                        if board[move[0], move[1]] == "" :
-                            bonus = move_pos_delta("k", (x,y), (move[0], move[1]), enemies_remaining)
-                            kingMoves.append([mk_val + bonus, (x,y), (move[0], move[1])])
-                        elif board[move[0], move[1]] == "X":
-                            pass
-                        elif board[move[0], move[1]][1] != color:
-                            bonus = move_pos_delta("k", (x,y), (move[0], move[1]), enemies_remaining)
-                            kingMoves.append([moveValues["t"+board[move[0], move[1]][0]] + mk_val + bonus, (x,y), (move[0], move[1])])
-                return kingMoves
-            
+    def getMax(moves): # returns the move with the highest score.
+        highestScore = 0
+        highestIndex = 0
+        for index, value in enumerate(moves):
+            if value[0] > highestScore:
+                highestScore = value[0]
+                highestIndex = index
+        return moves[highestIndex]
 
-                    allSinglePieceMoves = getAllSinglePieceMoves(board) # gets all the possible moves for the piece on the current cell.
+    def getMin(moves): # idem lowest score.
+        lowestScore = math.inf
+        lowestIndex = 0
+        for index, value in enumerate(moves):
+            if value[0] < lowestScore:
+                lowestScore = value[0]
+                lowestIndex = index
+        return moves[lowestIndex]
 
-                    everyPossibleMove.extend(allSinglePieceMoves) # adds these moves to the total current board possible moves
-                    
-            return everyPossibleMove # returns all the possible moves for the current board. format: [[score, startPos, destPos], [...]]
-            
-        def getMax(moves): # returns the move with the highest score.
-            highestScore = 0
-            highestIndex = 0
-            for index,value in enumerate(moves):
-                if value[0] > highestScore:
-                    highestScore = value[0]
-                    highestIndex = index
-            return moves[highestIndex]
-        
-        def getMin(moves): # idem lowest score.
-            lowestScore = math.inf
-            lowestIndex = 0
-            for index, value in enumerate(moves):
-                if value[0] < lowestScore:
-                    lowestScore = value[0]
-                    lowestIndex = index
-            return moves[lowestIndex]
-        
-        def createNewBoard(board, nextMove): # creates a new board from one move
-            new_board = board.copy()                    # Avoids modifying actual board
-            new_board[nextMove[2]] = board[nextMove[1]] # This moves the piece to it's dest.
-            new_board[nextMove[1]] = ""                 # The cell we moved from is now empty
-            return new_board
+    def createNewBoard(board, nextMove): # creates a new board from one move
+        new_board = board.copy()                    # Avoids modifying actual board
+        new_board[nextMove[2]] = board[nextMove[1]] # This moves the piece to it's dest.
+        new_board[nextMove[1]] = ""                 # The cell we moved from is now empty
+        return new_board
 
+    def minMax(board, depth, maximizing_player):
         # Recrusive stop
         if depth == 1:
             currentMoves = getAllMoves(board, our_color if maximizing_player else enemy_color)
             if len(currentMoves) != 0:
-                finalMove = getMax(currentMoves)
-                # print("Final move : ", finalMove, " that took", time.time() - startTime, " seconds !")
-                return finalMove # old version where I used to give the final move instead of the score: finalMove[1], finalMove[2]
-            else:
-                return [0, (0,0), (0,0)]
-            
-        
-            
+                return getMax(currentMoves)
+            return [0, (0,0), (0,0)]
 
-        # /////////////////////////////////////////// CURRENT STATUS ///////////////////////////////////////////
-        # At the moment, this section is supposed to handle the recursive minMax but when the depth is set
-        # bigger than 1, then our pieces do not move. I think this is because we might be giving the
-        # enemy's move instead of our own.. which would make the move invalid and skip us.
-        #
-        # SO FIX IT !///////////////////////////////////////////////////////////////////////////////////////////
-        #
         # Our turn
         if maximizing_player:
             bestMove = [-math.inf, (0,0), (0,0)]
             for nextMove in getAllMoves(board, our_color):
-                new_board = createNewBoard(board, nextMove)             # Create new board with the chosen move
-                nextRecursiveMove = minMax(new_board, depth-1, False)   # gets the best move for that new board
-                bestMove = bestMove if bestMove[0] > nextRecursiveMove[0] else nextRecursiveMove # assigns the best move depending on it's score nextRecursiveMove[0] == "score".
+                new_board = createNewBoard(board, nextMove)
+                nextRecursiveMove = minMax(new_board, depth-1, False)
+                bestMove = bestMove if bestMove[0] > nextRecursiveMove[0] else nextRecursiveMove
             return bestMove
         # Enemy's turn
-        else:
-            bestMove = [math.inf, (0,0), (0,0)]
-            for nextMove in getAllMoves(board, enemy_color):
-                new_board = createNewBoard(board, nextMove)             # Create new board with the chosen move
-                nextRecursiveMove = minMax(new_board, depth-1, True)    # gets the best move for that new board
-                bestMove = bestMove if bestMove[0] < nextRecursiveMove[0] else nextRecursiveMove # assigns the best move depending on it's score nextRecursiveMove[0] == "score".
-            return bestMove
+        bestMove = [math.inf, (0,0), (0,0)]
+        for nextMove in getAllMoves(board, enemy_color):
+            new_board = createNewBoard(board, nextMove)
+            nextRecursiveMove = minMax(new_board, depth-1, True)
+            bestMove = bestMove if bestMove[0] < nextRecursiveMove[0] else nextRecursiveMove
+        return bestMove
     
 
 
