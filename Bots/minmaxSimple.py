@@ -28,12 +28,12 @@ def minMaxBot(player_sequence, board, time_budget, **kwargs):
     }
     moveValues = {
         # Moves
-        "mp" : 1,
-        "mn" : 6,
+        "mp" : 2,
+        "mn" : 5,
         "mr" : 4,
         "mb" : 4,
-        "mq" : 3,
-        "mk" : 1,
+        "mq" : 6,
+        "mk" : 2,
 
         # Attacks
         "tp" : 4,
@@ -49,7 +49,7 @@ def minMaxBot(player_sequence, board, time_budget, **kwargs):
     everyPieceBestMove = []
 
     # Scans every cell on the board.
-    for x in range(board.shape[0]-1):
+    for x in range(board.shape[0]):
         for y in range(board.shape[1]):
             # If current cell does not contain anything or is
             #  invalide, move to the next iteration of y.
@@ -110,7 +110,6 @@ def minMaxBot(player_sequence, board, time_budget, **kwargs):
                     case "n":
                         print("Knight")
                         allMoves.extend( getKnightMoves(x,y) )
-                        pass
                     case "r":
                         print("Rook")
                         allMoves.extend( getRookMoves(x,y) )
@@ -300,15 +299,7 @@ def minMaxBot(player_sequence, board, time_budget, **kwargs):
 
             allMoves = getAllMoves()
 
-            if len(allMoves) != 0:
-                # Hard coded getMax() function because had issues.
-                highestScore = 0
-                highestIndex = 0
-                for index,value in enumerate(allMoves):
-                    if value[0] > highestScore:
-                        highestScore = value[0]
-                        highestIndex = index
-                everyPieceBestMove.append(allMoves[highestIndex])
+            everyPieceBestMove.extend(allMoves)
 
             
 
@@ -321,12 +312,18 @@ def minMaxBot(player_sequence, board, time_budget, **kwargs):
                 highestIndex = index
         return moves[highestIndex]
     
+    def minMax(board, depth, maximizing_player):
+        if depth == 0:
+            #getMax()
+            print("yes")
+    
     print("everyPieceBestMove : ", everyPieceBestMove)
     if len(everyPieceBestMove) != 0:
         finalMove = getMax(everyPieceBestMove)
         print("Final move : ", finalMove, " that took", time.time() - startTime, " seconds !")
         return finalMove[1], finalMove[2]
     
+
     return (0,0), (0,0)
 
 
