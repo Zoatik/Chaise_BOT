@@ -561,12 +561,13 @@ def minMaxBot(player_sequence, board, time_budget, **kwargs):
                 bestMove = bestMove if bestMove[0] > nextRecursiveMove[0] else nextRecursiveMove
             return bestMove
         # Enemy's turn
-        bestMove = [math.inf, (0,0), (0,0)]
-        for nextMove in getAllMoves(board, enemy_color):
-            new_board = createNewBoard(board, nextMove)
-            nextRecursiveMove = minMax(new_board, depth-1, True)
-            bestMove = bestMove if bestMove[0] < nextRecursiveMove[0] else nextRecursiveMove
-        return bestMove
+        else:
+            bestMove = [math.inf, (0,0), (0,0)]
+            for nextMove in getAllMoves(board, enemy_color):
+                new_board = createNewBoard(board, nextMove)
+                nextRecursiveMove = minMax(new_board, depth-1, True)
+                bestMove = bestMove if bestMove[0] < nextRecursiveMove[0] else nextRecursiveMove
+            return bestMove
     
 
     bestPossibleScore = -math.inf
