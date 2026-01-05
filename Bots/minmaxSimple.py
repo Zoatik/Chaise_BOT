@@ -213,6 +213,8 @@ def minMaxBot(player_sequence, board, time_budget, **kwargs):
                     count += 1
         return count
 
+
+
     def getAllMoves(board, color):
         enemies_remaining = count_enemies(board, color)
         moveValues = dict(baseMoveValues)
@@ -228,38 +230,73 @@ def minMaxBot(player_sequence, board, time_budget, **kwargs):
         def getPawnMoves(x, y):
             mp_val = moveValues["mp"]
             pawnMoves = []
-            if x + 1 > 7:
-                return pawnMoves
-            # Queen upgrade ?
-            if x + 1 == 7 and board[x + 1, y] == "":
-                promo_bonus = (
-                    piece_pos_bonus("q", (x + 1, y), enemies_remaining)
-                    - piece_pos_bonus("p", (x, y), enemies_remaining)
-                )
-                pawnMoves.append([moveValues["pup"] + promo_bonus, (x, y), (x + 1, y)])
-            # Move forwards ?
-            elif board[x + 1, y] == "":
-                bonus = move_pos_delta("p", (x, y), (x + 1, y), enemies_remaining)
-                pawnMoves.append([mp_val + bonus, (x, y), (x + 1, y)])
-            # Diag attacks ?
-            if y + 1 <= 7:
-                if board[x + 1, y + 1] != "" and board[x + 1, y + 1] != "X":
-                    if board[x + 1, y + 1][1] != color:
-                        bonus = move_pos_delta("p", (x, y), (x + 1, y + 1), enemies_remaining)
-                        pawnMoves.append([
-                            moveValues["t" + board[x + 1, y + 1][0]] + mp_val + bonus,
-                            (x, y),
-                            (x + 1, y + 1)
-                        ])
-            if y - 1 >= 0:
-                if board[x + 1, y - 1] != "" and board[x + 1, y - 1] != "X":
-                    if board[x + 1, y - 1][1] != color:
-                        bonus = move_pos_delta("p", (x, y), (x + 1, y - 1), enemies_remaining)
-                        pawnMoves.append([
-                            moveValues["t" + board[x + 1, y - 1][0]] + mp_val + bonus,
-                            (x, y),
-                            (x + 1, y - 1)
-                        ])
+            if color == our_color:
+                if x + 1 > 7:
+                    return pawnMoves
+                # Queen upgrade ?
+                if x + 1 == 7 and board[x + 1, y] == "":
+                    promo_bonus = (
+                        piece_pos_bonus("q", (x + 1, y), enemies_remaining)
+                        - piece_pos_bonus("p", (x, y), enemies_remaining)
+                    )
+                    pawnMoves.append([moveValues["pup"] + promo_bonus, (x, y), (x + 1, y)])
+                # Move forwards ?
+                elif board[x + 1, y] == "":
+                    bonus = move_pos_delta("p", (x, y), (x + 1, y), enemies_remaining)
+                    pawnMoves.append([mp_val + bonus, (x, y), (x + 1, y)])
+                # Diag attacks ?
+                if y + 1 <= 7:
+                    if board[x + 1, y + 1] != "" and board[x + 1, y + 1] != "X":
+                        if board[x + 1, y + 1][1] != color:
+                            bonus = move_pos_delta("p", (x, y), (x + 1, y + 1), enemies_remaining)
+                            pawnMoves.append([
+                                moveValues["t" + board[x + 1, y + 1][0]] + mp_val + bonus,
+                                (x, y),
+                                (x + 1, y + 1)
+                            ])
+                if y - 1 >= 0:
+                    if board[x + 1, y - 1] != "" and board[x + 1, y - 1] != "X":
+                        if board[x + 1, y - 1][1] != color:
+                            bonus = move_pos_delta("p", (x, y), (x + 1, y - 1), enemies_remaining)
+                            pawnMoves.append([
+                                moveValues["t" + board[x + 1, y - 1][0]] + mp_val + bonus,
+                                (x, y),
+                                (x + 1, y - 1)
+                            ])
+            else:
+                if x - 1 < 0:
+                    return pawnMoves
+                # Queen upgrade ?
+                if x - 1 == 0 and board[x - 1, y] == "":
+                    promo_bonus = (
+                        piece_pos_bonus("q", (x - 1, y), enemies_remaining)
+                        - piece_pos_bonus("p", (x, y), enemies_remaining)
+                    )
+                    pawnMoves.append([moveValues["pup"] + promo_bonus, (x, y), (x - 1, y)])
+                # Move forwards ?
+                elif board[x - 1, y] == "":
+                    bonus = move_pos_delta("p", (x, y), (x - 1, y), enemies_remaining)
+                    pawnMoves.append([mp_val + bonus, (x, y), (x - 1, y)])
+                # Diag attacks ?
+                if y + 1 <= 7:
+                    if board[x - 1, y + 1] != "" and board[x - 1, y + 1] != "X":
+                        if board[x - 1, y + 1][1] != color:
+                            bonus = move_pos_delta("p", (x, y), (x - 1, y + 1), enemies_remaining)
+                            pawnMoves.append([
+                                moveValues["t" + board[x - 1, y + 1][0]] + mp_val + bonus,
+                                (x, y),
+                                (x - 1, y + 1)
+                            ])
+                if y - 1 >= 0:
+                    if board[x - 1, y - 1] != "" and board[x - 1, y - 1] != "X":
+                        if board[x - 1, y - 1][1] != color:
+                            bonus = move_pos_delta("p", (x, y), (x - 1, y - 1), enemies_remaining)
+                            pawnMoves.append([
+                                moveValues["t" + board[x - 1, y - 1][0]] + mp_val + bonus,
+                                (x, y),
+                                (x - 1, y - 1)
+                            ])
+
             return pawnMoves
 
         def getKnightMoves(x, y):
@@ -505,9 +542,14 @@ def minMaxBot(player_sequence, board, time_budget, **kwargs):
     def minMax(board, depth, maximizing_player):
         # Recrusive stop
         if depth == 1:
-            currentMoves = getAllMoves(board, our_color if maximizing_player else enemy_color)
-            if len(currentMoves) != 0:
-                return getMax(currentMoves)
+            if maximizing_player:
+                currentMoves = getAllMoves(board, our_color)
+                if len(currentMoves) != 0:
+                    return getMax(currentMoves)
+            else:
+                currentMoves = getAllMoves(board, enemy_color)
+                if len(currentMoves) != 0:
+                    return getMin(currentMoves)
             return [0, (0,0), (0,0)]
 
         # Our turn
@@ -527,15 +569,24 @@ def minMaxBot(player_sequence, board, time_budget, **kwargs):
         return bestMove
     
 
-
+    bestPossibleScore = -math.inf
+    bestPossibleMove = [(0,0), (0,0)]
     # Recursive call
-    optimalMove = minMax(board, 1, True) # Still contains [score, startingPos, destPos]
+    for rootMove in getAllMoves(board, our_color):
+        new_board = createNewBoard(board, rootMove)
+        if minMax(new_board, 3, True)[0] > bestPossibleScore:
+            bestPossibleMove = [rootMove[1], rootMove[2]]
+
     
-    if optimalMove != [0, (0,0), (0,0)]:
-        print("Final move for this board: ", optimalMove[1], " to -> ", optimalMove[2], ". This took:", time.time()-startTime, " seconds !")
-        return optimalMove[1], optimalMove[2]
-    
-    return (0,0), (0,0)
+    print("Final move for this board: ", bestPossibleMove[0], " to -> ", bestPossibleMove[1], ". This took:", time.time()-startTime, " seconds !")
+    return bestPossibleMove[0], bestPossibleMove[1]
 
 
 register_chess_bot("MinMax", minMaxBot)
+
+
+# Notes:
+# Have to change the move orientation for pawns depending on the color.
+# All the other pieces are fine for moves.
+
+# But first fix the move choice.
