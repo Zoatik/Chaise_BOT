@@ -213,8 +213,6 @@ def minMaxBot(player_sequence, board, time_budget, **kwargs):
                     count += 1
         return count
 
-
-
     def getAllMoves(board, color):
         enemies_remaining = count_enemies(board, color)
         moveValues = dict(baseMoveValues)
@@ -514,72 +512,49 @@ def minMaxBot(player_sequence, board, time_budget, **kwargs):
                         pass
         return everyPossibleMove
 
-            
-    def getMax(moves): # returns the move with the highest score.
-        highestScore = 0
-        highestIndex = 0
-        for index, value in enumerate(moves):
-            if value[0] > highestScore:
-                highestScore = value[0]
-                highestIndex = index
-        return moves[highestIndex]
-
-    def getMin(moves): # idem lowest score.
-        lowestScore = math.inf
-        lowestIndex = 0
-        for index, value in enumerate(moves):
-            if value[0] < lowestScore:
-                lowestScore = value[0]
-                lowestIndex = index
-        return moves[lowestIndex]
-
+    
     def createNewBoard(board, nextMove): # creates a new board from one move
         new_board = board.copy()                    # Avoids modifying actual board
         new_board[nextMove[2]] = board[nextMove[1]] # This moves the piece to it's dest.
         new_board[nextMove[1]] = ""                 # The cell we moved from is now empty
         return new_board
 
-    def minMax(board, depth, maximizing_player):
+    def minMax(board, depth, maximizing_player, score): # This will return the final score of the branch at the recursive stop.
         # Recrusive stop
-        if depth == 1:
-            if maximizing_player:
-                currentMoves = getAllMoves(board, our_color)
-                if len(currentMoves) != 0:
-                    return getMax(currentMoves)
-            else:
-                currentMoves = getAllMoves(board, enemy_color)
-                if len(currentMoves) != 0:
-                    return getMin(currentMoves)
-            return [0, (0,0), (0,0)]
+        if depth == 0:
+            return score
 
         # Our turn
         if maximizing_player:
-            bestMove = [-math.inf, (0,0), (0,0)]
+            bestScore = -math.inf
             for nextMove in getAllMoves(board, our_color):
                 new_board = createNewBoard(board, nextMove)
-                nextRecursiveMove = minMax(new_board, depth-1, False)
-                bestMove = bestMove if bestMove[0] > nextRecursiveMove[0] else nextRecursiveMove
-            return bestMove
+                nextRecursiveScore = minMax(new_board, depth-1, False, score + nextMove[0])
+                bestScore = max(bestScore, nextRecursiveScore)
+            return bestScore
         # Enemy's turn
         else:
-            bestMove = [math.inf, (0,0), (0,0)]
+            bestScore = math.inf
             for nextMove in getAllMoves(board, enemy_color):
                 new_board = createNewBoard(board, nextMove)
-                nextRecursiveMove = minMax(new_board, depth-1, True)
-                bestMove = bestMove if bestMove[0] < nextRecursiveMove[0] else nextRecursiveMove
-            return bestMove
+                nextRecursiveScore = minMax(new_board, depth-1, True, score + nextMove[0]) # I am too tired too know if it's + or - here.
+                bestScore = min(bestScore, nextRecursiveScore)
+            return bestScore
     
 
     bestPossibleScore = -math.inf
     bestPossibleMove = [(0,0), (0,0)]
+    searchDepth = 3
     # Recursive call
     for rootMove in getAllMoves(board, our_color):
         new_board = createNewBoard(board, rootMove)
-        if minMax(new_board, 3, True)[0] > bestPossibleScore:
+        rootBestScore = minMax(new_board, searchDepth, False, rootMove[0]) # This set the rootMove[0]=rootMove's score to the best final path score.
+        if  rootBestScore > bestPossibleScore:                  # If that score is the highest, then we go with the chosen path.
+            bestPossibleScore = rootBestScore
             bestPossibleMove = [rootMove[1], rootMove[2]]
 
     
-    print("Final move for this board: ", bestPossibleMove[0], " to -> ", bestPossibleMove[1], ". This took:", time.time()-startTime, " seconds !")
+    print("Final move for this board:", bestPossibleMove[0], " to -> ", bestPossibleMove[1],", with a score of", bestPossibleScore, ". This took:", time.time()-startTime, " seconds !")
     return bestPossibleMove[0], bestPossibleMove[1]
 
 
@@ -587,7 +562,20 @@ register_chess_bot("MinMax", minMaxBot)
 
 
 # Notes:
-# Have to change the move orientation for pawns depending on the color.
-# All the other pieces are fine for moves.
+# Have to implement, alpha-beta pruning to speed up the process.
+#
+# After thinking a bit.. I don't think that I did standard minMax
+# algorithm correctly. I gave the score as one of it's arguments
+# but then I can't do anything with the final state and apply
+# pruning on it.
+# I think I have to have a board that has a score on it's own
+# instead of a path accumulated score.
+# I decided to go with the path accumulated score because we
+# assigned points to the moves and thought if we remove that,
+# then our entire grid preference placements for each piece
+# would be revoked.
+# So might simply try to optimize this current version,
+# instead of removing a core element to our concept.
 
-# But first fix the move choice.
+
+# also, at line 561 for the enemy's score dunno +-.
