@@ -11,6 +11,8 @@
 import math
 import time
 from Bots.ChessBotList import register_chess_bot
+import csv
+import os
 
 #   Simply move the pawns forward and tries to capture as soon as possible
 def chess_bot(player_sequence, board, time_budget, **kwargs):
@@ -31,8 +33,6 @@ def chess_bot(player_sequence, board, time_budget, **kwargs):
         if Utils.time_up(start_time = startTime, time_budget=time_budget, margin=0.03):
             raise TimeoutError("time budget exceeded")
 
-        stats.q_nodes += 1
-
         stand_pat = Utils.evaluateBoard(b, perspective_color=stm_color)
         maximizing = (stm_color == player_color)
 
@@ -46,6 +46,7 @@ def chess_bot(player_sequence, board, time_budget, **kwargs):
             for mv in moves:
                 if Utils.time_up(start_time=startTime, time_budget=time_budget, margin=0.03):
                     raise TimeoutError("time budget exceeded")
+                stats.q_nodes += 1
                 nb = Utils.create_new_board(b, mv)
                 next_stm = 'w' if stm_color == 'b' else 'b'
                 score = quiescence(nb, next_stm, alpha, beta)
@@ -64,6 +65,7 @@ def chess_bot(player_sequence, board, time_budget, **kwargs):
             for mv in moves:
                 if Utils.time_up(start_time=startTime, time_budget=time_budget, margin=0.03):
                     raise TimeoutError("time budget exceeded")
+                stats.q_nodes += 1
                 nb = Utils.create_new_board(b, mv)
                 next_stm = 'w' if stm_color == 'b' else 'b'
                 score = quiescence(nb, next_stm, alpha, beta)
@@ -75,7 +77,6 @@ def chess_bot(player_sequence, board, time_budget, **kwargs):
 
     def alpha_beta(b, stm_color, depth, alpha, beta):
         if depth == 0:
-            stats.nodes += 1
             return quiescence(b, stm_color, alpha, beta)
 
         if Utils.time_up(start_time=startTime, time_budget=time_budget, margin=0.03):
@@ -177,19 +178,43 @@ def chess_bot(player_sequence, board, time_budget, **kwargs):
     final_board = Utils.create_new_board(root_board, (bestPossibleMove[0], bestPossibleMove[1]))
     final_score = Utils.evaluateBoard(final_board, perspective_color=player_color)
 
+    finalTime = time.time()-startTime
     print(
         "Final move for this board:",
         bestPossibleMove[0], "to ->", bestPossibleMove[1],
         ", with a score of", bestPossibleScore,
-        ". This took:", time.time() - startTime, "seconds!",
+        ". This took:", finalTime, "seconds!",
         " With a depth of:", depth - 1,". Final eval:", final_score
     )
+
+    # Write stats to CSV file
+    file_exists = os.path.isfile("StatsCSVFile")
+
+    with open("StatsCSVFile", mode="a", newline="") as file:
+        writer = csv.writer(file)
+        # Write header only once
+        if not file_exists:
+            writer.writerow([
+                "Total nodes visited",
+                "Total quiescence nodes",
+                "Alpha-beta cutoffs",
+                "Alpha-beta improvement",
+                "Nodes per second"
+            ])
+        writer.writerow([
+            stats.nodes+stats.q_nodes,
+            stats.q_nodes,
+            stats.cutoffs,
+            math.floor(stats.cutoffs/(stats.nodes+stats.q_nodes)*100),
+            round((stats.nodes+stats.q_nodes)/finalTime, 2)
+        ])
     print(
-        "--- Stats ---           ",                "\n",
-        "Total nodes visited:    ", stats.nodes,   "\n",
+        "--- Stats ---           ", "\n",
+        "Total nodes visited:    ", stats.nodes+stats.q_nodes, "\n",
         "Total quiescence nodes: ", stats.q_nodes, "\n",
         "Alpha-beta cutoffs:     ", stats.cutoffs, "\n",
-        "Alpha-beta improvement: ", math.floor((stats.nodes-stats.cutoffs)*100/stats.nodes), "%\n"
+        "Alpha-beta improvement: ", math.floor(stats.cutoffs/(stats.nodes+stats.q_nodes)*100), "%\n",
+        "Nodes per second:       ", round((stats.nodes+stats.q_nodes)/finalTime, 2), "\n",
     )
 
     return bestPossibleMove[0], bestPossibleMove[1]
