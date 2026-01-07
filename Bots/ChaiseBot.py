@@ -15,6 +15,7 @@ from Bots.ChessBotList import register_chess_bot
 #   Simply move the pawns forward and tries to capture as soon as possible
 def chess_bot(player_sequence, board, time_budget, **kwargs):
     startTime = time.time()
+    stats = Stats()
 
     def get_capture_moves(b, color, perspective_color):
         caps = []
@@ -29,6 +30,8 @@ def chess_bot(player_sequence, board, time_budget, **kwargs):
     def quiescence(b, stm_color, alpha, beta):
         if Utils.time_up(start_time = startTime, time_budget=time_budget, margin=0.03):
             raise TimeoutError("time budget exceeded")
+
+        stats.q_nodes += 1
 
         stand_pat = Utils.evaluateBoard(b, perspective_color=stm_color)
         maximizing = (stm_color == player_color)
@@ -48,6 +51,7 @@ def chess_bot(player_sequence, board, time_budget, **kwargs):
                 score = quiescence(nb, next_stm, alpha, beta)
                 alpha = max(alpha, score)
                 if alpha >= beta:
+                    stats.cutoffs += 1
                     break
             return alpha
         else:
@@ -65,11 +69,13 @@ def chess_bot(player_sequence, board, time_budget, **kwargs):
                 score = quiescence(nb, next_stm, alpha, beta)
                 beta = min(beta, score)
                 if alpha >= beta:
+                    stats.cutoffs += 1
                     break
             return beta
 
     def alpha_beta(b, stm_color, depth, alpha, beta):
         if depth == 0:
+            stats.nodes += 1
             return quiescence(b, stm_color, alpha, beta)
 
         if Utils.time_up(start_time=startTime, time_budget=time_budget, margin=0.03):
@@ -85,11 +91,15 @@ def chess_bot(player_sequence, board, time_budget, **kwargs):
             for mv in moves:
                 if Utils.time_up(start_time=startTime, time_budget=time_budget, margin=0.03):
                     raise TimeoutError("time budget exceeded")
+                
+                stats.nodes += 1
+
                 nb = Utils.create_new_board(b, mv)
                 next_stm = 'w' if stm_color == 'b' else 'b'
                 value = max(value, alpha_beta(nb, next_stm, depth - 1, alpha, beta))
                 alpha = max(alpha, value)
                 if alpha >= beta:
+                    stats.cutoffs += 1
                     break
             return value
         else:
@@ -97,11 +107,15 @@ def chess_bot(player_sequence, board, time_budget, **kwargs):
             for mv in moves:
                 if Utils.time_up(start_time=startTime, time_budget=time_budget, margin=0.03):
                     raise TimeoutError("time budget exceeded")
+                
+                stats.nodes += 1
+
                 nb = Utils.create_new_board(b, mv)
                 next_stm = 'w' if stm_color == 'b' else 'b'
                 value = min(value, alpha_beta(nb, next_stm, depth - 1, alpha, beta))
                 beta = min(beta, value)
                 if alpha >= beta:
+                    stats.cutoffs += 1
                     break
             return value
         
@@ -170,11 +184,32 @@ def chess_bot(player_sequence, board, time_budget, **kwargs):
         ". This took:", time.time() - startTime, "seconds!",
         " With a depth of:", depth - 1,". Final eval:", final_score
     )
+    print(
+        "--- Stats ---           ",                "\n",
+        "Total nodes visited:    ", stats.nodes,   "\n",
+        "Total quiescence nodes: ", stats.q_nodes, "\n",
+        "Alpha-beta cutoffs:     ", stats.cutoffs, "\n",
+        "Alpha-beta improvement: ", math.floor((stats.nodes-stats.cutoffs)*100/stats.nodes), "%\n"
+    )
 
     return bestPossibleMove[0], bestPossibleMove[1]
 
 #   Example how to register the function
 register_chess_bot("ChaiseBot", chess_bot)
+
+
+
+
+
+class Stats:
+ def __init__(self):
+        self.nodes = 0
+        self.q_nodes = 0
+        self.cutoffs = 0
+
+
+
+
 
 class Utils:
     basePieceValues = {
@@ -330,6 +365,9 @@ class Utils:
             ]
         }
     }
+
+
+
 
     @classmethod
     def piece_pos_bonus(cls, pieceType, pos, enemies_remaining):
@@ -664,6 +702,4 @@ class Utils:
         nb[start] = "" 
 
         return nb
-
-
 
