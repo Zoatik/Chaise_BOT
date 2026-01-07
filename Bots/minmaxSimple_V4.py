@@ -28,18 +28,6 @@ def minMaxBot(player_sequence, board, time_budget, **kwargs):
         "q" : 8.8,
         "k" : 100
     }
-    baseMoveValues = {
-        # Simple moves
-        "mp": 0.1,
-        "mn": 0.2,
-        "mb": 0.2,
-        "mr": 0.2,
-        "mq": 0.15,
-        "mk": 0.05,
-
-        # Specials
-        "pup" : 10.0
-    }
 
     # Tables indexees en [x][y] avec (0,0) en bas a droite.
     # x monte vers le haut, y va vers la gauche.
@@ -179,6 +167,7 @@ def minMaxBot(player_sequence, board, time_budget, **kwargs):
     }
 
     def piece_pos_bonus(pieceType, pos, enemies_remaining):
+        position_scale = 0.25
         if pieceType not in position_bonus:
             return 0
         max_enemies = 16
@@ -187,7 +176,7 @@ def minMaxBot(player_sequence, board, time_budget, **kwargs):
         x, y = pos
         start_val = position_bonus[pieceType]["start"][x][y]
         end_val = position_bonus[pieceType]["end"][x][y]
-        return start_val + (end_val - start_val) * t
+        return start_val + (end_val - start_val) * t * position_scale
 
     def get_piece_attacks_for_eval(board, pos, pieceType, piece_color):
         x, y = pos
@@ -257,7 +246,7 @@ def minMaxBot(player_sequence, board, time_budget, **kwargs):
     eval_attack_counts = None
     eval_piece_attacks = None
 
-    def piece_attack_bonus(pieceType, pos):
+    def piece_attack_bonus(pos):
         if eval_piece_attacks is None:
             return 0
         x, y = pos
@@ -266,8 +255,12 @@ def minMaxBot(player_sequence, board, time_budget, **kwargs):
             return 0
         piece_color = cell[1]
         enemy_color = "w" if piece_color != "w" else "b"
+        attackers = eval_attack_counts[enemy_color].get(pos, 0) if eval_attack_counts else 0
+        defenders = eval_attack_counts[piece_color].get(pos, 0) if eval_attack_counts else 0
+        if attackers > 0 and defenders == 0:
+            return 0
         attacks = eval_piece_attacks.get(pos, [])
-        attack_weight = 1.0
+        attack_weight = 0.05
         bonus = 0
         for ax, ay in attacks:
             target = board[ax, ay]
@@ -285,7 +278,7 @@ def minMaxBot(player_sequence, board, time_budget, **kwargs):
         if cell == "" or cell == "X":
             return 0
         piece_color = cell[1]
-        protected_weight = 1.0
+        protected_weight = 0.2
         if eval_attack_counts[piece_color].get(pos, 0) > 0:
             return basePieceValues.get(pieceType, 0) * protected_weight
         return 0
@@ -299,7 +292,7 @@ def minMaxBot(player_sequence, board, time_budget, **kwargs):
             return 0
         piece_color = cell[1]
         attacks = eval_piece_attacks.get(pos, [])
-        protecting_weight = 1.0
+        protecting_weight = 0.1
         bonus = 0
         for ax, ay in attacks:
             target = board[ax, ay]
@@ -323,25 +316,10 @@ def minMaxBot(player_sequence, board, time_budget, **kwargs):
             return 0
         protected = eval_attack_counts[piece_color].get(pos, 0) > 0
         unprotected_weight = 1.0
-        protected_weight = 0.1
+        protected_weight = 0.5
         weight = protected_weight if protected else unprotected_weight
-        king_scale = 3.0 if pieceType == "k" else 1.0
+        king_scale = 4.0 if pieceType == "k" else 1.0
         return -basePieceValues.get(pieceType, 0) * weight * king_scale
-    
-    def double_pawn_penalty(board, pos, color):
-        x, y = pos
-        if board[x, y] == "p":
-            # Check if there's another pawn of the same color in the same column
-            for i in range(8):
-                if board[i, y] == "p" and i != x:
-                    return - 0.5  # Penalty for double pawns
-        return 0
-
-    def move_pos_delta(pieceType, from_pos, to_pos, enemies_remaining):
-        return (
-            piece_pos_bonus(pieceType, to_pos, enemies_remaining)
-            - piece_pos_bonus(pieceType, from_pos, enemies_remaining)
-        )
 
     def count_enemies(board, color):
         count = 0
@@ -354,16 +332,20 @@ def minMaxBot(player_sequence, board, time_budget, **kwargs):
                     count += 1
         return count
 
-    def evaluate_board(board):
+    def evaluate_board_components(board):
         nonlocal eval_attack_counts, eval_piece_attacks
         eval_attack_counts, eval_piece_attacks = build_attack_maps(board)
         enemies_remaining = count_enemies(board, our_color)
-        score = 0
         mobility_weight = 0.02
-        position_scale = 0.25
+        material_sum = 0.0
+        position_sum = 0.0
+        threat_sum = 0.0
+        protected_sum = 0.0
+        attack_sum = 0.0
+        protecting_sum = 0.0
         our_attacks = eval_attack_counts[our_color]
         enemy_attacks = eval_attack_counts[enemy_color]
-        score += (len(our_attacks) - len(enemy_attacks)) * mobility_weight
+        mobility_sum = (len(our_attacks) - len(enemy_attacks)) * mobility_weight
         for i in range(board.shape[0]):
             for j in range(board.shape[1]):
                 cell = board[i, j]
@@ -371,35 +353,138 @@ def minMaxBot(player_sequence, board, time_budget, **kwargs):
                     continue
                 piece_type = cell[0]
                 base_value = basePieceValues.get(piece_type, 0)
-                pos_value = piece_pos_bonus(piece_type, (i, j), enemies_remaining) * position_scale
+                pos_value = piece_pos_bonus(piece_type, (i, j), enemies_remaining)
                 pos_value = max(pos_value, -0.3 * base_value)
-                value = base_value + pos_value
-                value += piece_threat_malus(piece_type, (i, j))
-                value += piece_protected_bonus(piece_type, (i, j))
-                value += piece_attack_bonus(piece_type, (i, j))
-                value += piece_protecting_bonus(piece_type, (i, j))
-                if cell[1] == our_color:
-                    score += value
-                else:
-                    score -= value
-        return score
+                threat_value = piece_threat_malus(piece_type, (i, j))
+                protected_value = piece_protected_bonus(piece_type, (i, j))
+                attack_value = piece_attack_bonus((i, j))
+                protecting_value = piece_protecting_bonus(piece_type, (i, j))
+                sign = 1 if cell[1] == our_color else -1
+                material_sum += sign * base_value
+                position_sum += sign * pos_value
+                threat_sum += sign * threat_value
+                protected_sum += sign * protected_value
+                attack_sum += sign * attack_value
+                protecting_sum += sign * protecting_value
+        total = (
+            material_sum
+            + position_sum
+            + threat_sum
+            + protected_sum
+            + attack_sum
+            + protecting_sum
+            + mobility_sum
+        )
+        details = {
+            "material": material_sum,
+            "position": position_sum,
+            "threat": threat_sum,
+            "protected": protected_sum,
+            "attack": attack_sum,
+            "protecting": protecting_sum,
+            "mobility": mobility_sum
+        }
+        return total, details
+
+    def evaluate_board(board):
+        total, _ = evaluate_board_components(board)
+        return total
 
     def order_moves(board, moves, color, reverse=True):
         opponent_color = "w" if color != "w" else "b"
         attacked = getAttackedSquares(board, opponent_color)
         protected = getAttackedSquares(board, color)
+        enemy_threat_bonus = getEnemyThreatBonus(board, opponent_color, color)
+        attackers_by_square = {"w": {}, "b": {}}
+        for i in range(board.shape[0]):
+            for j in range(board.shape[1]):
+                cell = board[i, j]
+                if cell == "" or cell == "X":
+                    continue
+                piece_type = cell[0]
+                piece_color = cell[1]
+                attacks = get_piece_attacks_for_eval(board, (i, j), piece_type, piece_color)
+                for ax, ay in attacks:
+                    if board[ax, ay] == "X":
+                        continue
+                    attackers_by_square[piece_color].setdefault((ax, ay), []).append(
+                        basePieceValues.get(piece_type, 0)
+                    )
+
+        def see_exchange(dest, attacker_value, captured_value, start_with_opponent=True):
+            our_attackers = sorted(attackers_by_square[color].get(dest, []))
+            opp_attackers = sorted(attackers_by_square[opponent_color].get(dest, []))
+            if attacker_value in our_attackers:
+                our_attackers.remove(attacker_value)
+            gains = [captured_value]
+            side = opponent_color if start_with_opponent else color
+            while True:
+                if side == opponent_color:
+                    if not opp_attackers:
+                        break
+                    val = opp_attackers.pop(0)
+                    gains.append(val - gains[-1])
+                    side = color
+                else:
+                    if not our_attackers:
+                        break
+                    val = our_attackers.pop(0)
+                    gains.append(val - gains[-1])
+                    side = opponent_color
+            for idx in range(len(gains) - 2, -1, -1):
+                gains[idx] = max(-gains[idx + 1], gains[idx])
+            return gains[0]
+
         ordered = []
+        def move_gives_check(move):
+            start, dest = move
+            new_board = createNewBoard(board, move)
+            king_pos = None
+            for i in range(new_board.shape[0]):
+                for j in range(new_board.shape[1]):
+                    cell = new_board[i, j]
+                    if cell == "" or cell == "X":
+                        continue
+                    if cell[0] == "k" and cell[1] == opponent_color:
+                        king_pos = (i, j)
+                        break
+                if king_pos is not None:
+                    break
+            if king_pos is None:
+                return False
+            attacked_after = getAttackedSquares(new_board, color)
+            return king_pos in attacked_after
+
         for move in moves:
-            score = move[0]
-            start = move[1]
-            dest = move[2]
+            score = 0
+            start, dest = move
             piece = board[start]
             piece_val = 0
             if piece != "" and piece != "X":
                 piece_val = basePieceValues.get(piece[0], 0)
             target = board[dest]
             if target != "" and target != "X" and target[1] != color:
-                score += basePieceValues.get(target[0], 0) * 0.5
+                captured_val = basePieceValues.get(target[0], 0)
+                see = see_exchange(dest, piece_val, captured_val, start_with_opponent=True)
+                if see < 0:
+                    continue
+                score += see
+                if target[0] == "k":
+                    score += 1000
+                elif target[0] == "q":
+                    score += 50
+                elif target[0] == "r":
+                    score += 20
+                elif target[0] in ("b", "n"):
+                    score += 10
+                score += enemy_threat_bonus.get(dest, 0) * 0.3
+            elif dest in attacked:
+                see = see_exchange(dest, piece_val, 0, start_with_opponent=True)
+                if see < 0:
+                    continue
+                score += see * 0.5
+            if move_gives_check(move):
+                score += 40
             if dest in attacked and dest not in protected:
                 score -= piece_val * 0.9
             if start in attacked and start not in protected and (dest not in attacked or dest in protected):
@@ -407,6 +492,45 @@ def minMaxBot(player_sequence, board, time_budget, **kwargs):
             ordered.append((score, move))
         ordered.sort(key=lambda m: m[0], reverse=reverse)
         return [move for _, move in ordered]
+
+    def get_capture_moves(board, color):
+        capture_moves = []
+        for move in getAllMoves(board, color):
+            _, dest = move
+            target = board[dest]
+            if target != "" and target != "X" and target[1] != color:
+                capture_moves.append(move)
+        return capture_moves
+
+    def quiescence(board, alpha, beta, maximizing_player):
+        if time.time() - startTime >= time_budget - 0.03:
+            raise TimeoutError("time budget exceeded")
+
+        stand_pat = evaluate_board(board)
+        if maximizing_player:
+            if stand_pat >= beta:
+                return stand_pat
+            alpha = max(alpha, stand_pat)
+            moves = order_moves(board, get_capture_moves(board, our_color), our_color, reverse=True)
+            for move in moves:
+                new_board = createNewBoard(board, move)
+                score = quiescence(new_board, alpha, beta, False)
+                alpha = max(alpha, score)
+                if alpha >= beta:
+                    break
+            return alpha
+
+        if stand_pat <= alpha:
+            return stand_pat
+        beta = min(beta, stand_pat)
+        moves = order_moves(board, get_capture_moves(board, enemy_color), enemy_color, reverse=False)
+        for move in moves:
+            new_board = createNewBoard(board, move)
+            score = quiescence(new_board, alpha, beta, True)
+            beta = min(beta, score)
+            if alpha >= beta:
+                break
+        return beta
 
     def getAttackedSquares(board, attacker_color):
         attacked = set()
@@ -554,166 +678,39 @@ def minMaxBot(player_sequence, board, time_budget, **kwargs):
         return threat_bonus
 
     def getAllMoves(board, color):
-        enemies_remaining = count_enemies(board, color)
-        moveValues = dict(baseMoveValues)
         everyPossibleMove = []
-        opponent_color = "w" if color != "w" else "b"
-        attacked_squares = getAttackedSquares(board, opponent_color)
-        protected_squares = getAttackedSquares(board, color)
-        enemy_threat_bonus = getEnemyThreatBonus(board, opponent_color, color)
 
         def isInBounds(x, y):
-            if x < 0 or x > 7:
-                return False
-            if y < 0 or y > 7:
-                return False
-            return True
+            return 0 <= x <= 7 and 0 <= y <= 7
 
-        def get_piece_attacks(pos, pieceType, piece_color):
-            x, y = pos
-            attacks = []
-            if pieceType == "p":
-                dx = 1 if piece_color == our_color else -1
-                for dy in (-1, 1):
-                    nx, ny = x + dx, y + dy
-                    if isInBounds(nx, ny):
-                        attacks.append((nx, ny))
-            elif pieceType == "n":
-                for dx, dy in (
-                    (2, 1), (2, -1), (-2, 1), (-2, -1),
-                    (1, 2), (1, -2), (-1, 2), (-1, -2)
-                ):
-                    nx, ny = x + dx, y + dy
-                    if isInBounds(nx, ny):
-                        attacks.append((nx, ny))
-            elif pieceType == "k":
-                for dx, dy in (
-                    (1, 0), (-1, 0), (0, 1), (0, -1),
-                    (1, 1), (1, -1), (-1, 1), (-1, -1)
-                ):
-                    nx, ny = x + dx, y + dy
-                    if isInBounds(nx, ny):
-                        attacks.append((nx, ny))
-            else:
-                directions = []
-                if pieceType in ("b", "q"):
-                    directions.extend([(1, 1), (1, -1), (-1, 1), (-1, -1)])
-                if pieceType in ("r", "q"):
-                    directions.extend([(1, 0), (-1, 0), (0, 1), (0, -1)])
-                for dx, dy in directions:
-                    nx, ny = x + dx, y + dy
-                    while isInBounds(nx, ny):
-                        if board[nx, ny] == "X":
-                            break
-                        attacks.append((nx, ny))
-                        if board[nx, ny] != "":
-                            break
-                        nx += dx
-                        ny += dy
-            return attacks
+        def is_enemy(x, y):
+            cell = board[x, y]
+            return cell != "" and cell != "X" and cell[1] != color
 
-        def attacked_malus(pieceType, dest, self_attacks):
-            if dest not in attacked_squares:
-                return 0
-            if dest in protected_squares and dest not in self_attacks:
-                return 0
-            return -basePieceValues.get(pieceType, 0)
-
-        def apply_attack_malus(moves, pieceType, origin, piece_color):
-            self_attacks = set(get_piece_attacks(origin, pieceType, piece_color))
-            for move in moves:
-                move[0] += (
-                    attacked_malus(pieceType, move[2], self_attacks)
-                    - attacked_malus(pieceType, move[1], self_attacks)
-                )
-            return moves
+        def is_empty(x, y):
+            return board[x, y] == ""
 
         def getPawnMoves(x, y):
-            mp_val = moveValues["mp"]
             pawnMoves = []
             if color == our_color:
-                if x + 1 > 7:
-                    return pawnMoves
-                # Queen upgrade ?
-                if x + 1 == 7 and board[x + 1, y] == "":
-                    promo_bonus = (
-                        piece_pos_bonus("q", (x + 1, y), enemies_remaining)
-                        - piece_pos_bonus("p", (x, y), enemies_remaining)
-                    )
-                    promo_bonus += double_pawn_penalty(board, (x + 1, y), color)
-                    pawnMoves.append([moveValues["pup"] + promo_bonus, (x, y), (x + 1, y)])
-                # Move forwards ?
-                elif board[x + 1, y] == "":
-                    bonus = move_pos_delta("p", (x, y), (x + 1, y), enemies_remaining)
-                    bonus += double_pawn_penalty(board, (x + 1, y), color)
-                    pawnMoves.append([mp_val + bonus, (x, y), (x + 1, y)])
-                # Diag attacks ?
-                if y + 1 <= 7:
-                    if board[x + 1, y + 1] != "" and board[x + 1, y + 1] != "X":
-                        if board[x + 1, y + 1][1] != color:
-                            bonus = move_pos_delta("p", (x, y), (x + 1, y + 1), enemies_remaining)
-                            bonus += double_pawn_penalty(board, (x + 1, y + 1), color)
-                            capture_bonus = enemy_threat_bonus.get((x + 1, y + 1), 0)
-                            pawnMoves.append([
-                                basePieceValues[board[x + 1, y + 1][0]] + capture_bonus + mp_val + bonus,
-                                (x, y),
-                                (x + 1, y + 1)
-                            ])
-                if y - 1 >= 0:
-                    if board[x + 1, y - 1] != "" and board[x + 1, y - 1] != "X":
-                        if board[x + 1, y - 1][1] != color:
-                            bonus = move_pos_delta("p", (x, y), (x + 1, y - 1), enemies_remaining)
-                            bonus += double_pawn_penalty(board, (x + 1, y - 1), color)
-                            capture_bonus = enemy_threat_bonus.get((x + 1, y - 1), 0)
-                            pawnMoves.append([
-                                basePieceValues[board[x + 1, y - 1][0]] + capture_bonus + mp_val + bonus,
-                                (x, y),
-                                (x + 1, y - 1)
-                            ])
+                if x + 1 <= 7:
+                    if is_empty(x + 1, y):
+                        pawnMoves.append(((x, y), (x + 1, y)))
+                    if y + 1 <= 7 and is_enemy(x + 1, y + 1):
+                        pawnMoves.append(((x, y), (x + 1, y + 1)))
+                    if y - 1 >= 0 and is_enemy(x + 1, y - 1):
+                        pawnMoves.append(((x, y), (x + 1, y - 1)))
             else:
-                if x - 1 < 0:
-                    return pawnMoves
-                # Queen upgrade ?
-                if x - 1 == 0 and board[x - 1, y] == "":
-                    promo_bonus = (
-                        piece_pos_bonus("q", (x - 1, y), enemies_remaining)
-                        - piece_pos_bonus("p", (x, y), enemies_remaining)
-                    )
-                    promo_bonus += double_pawn_penalty(board, (x - 1, y), color)
-                    pawnMoves.append([moveValues["pup"] + promo_bonus, (x, y), (x - 1, y)])
-                # Move forwards ?
-                elif board[x - 1, y] == "":
-                    bonus = move_pos_delta("p", (x, y), (x - 1, y), enemies_remaining)
-                    bonus += double_pawn_penalty(board, (x - 1, y), color)
-                    pawnMoves.append([mp_val + bonus, (x, y), (x - 1, y)])
-                # Diag attacks ?
-                if y + 1 <= 7:
-                    if board[x - 1, y + 1] != "" and board[x - 1, y + 1] != "X":
-                        if board[x - 1, y + 1][1] != color:
-                            bonus = move_pos_delta("p", (x, y), (x - 1, y + 1), enemies_remaining)
-                            bonus += double_pawn_penalty(board, (x - 1, y + 1), color)
-                            capture_bonus = enemy_threat_bonus.get((x - 1, y + 1), 0)
-                            pawnMoves.append([
-                                basePieceValues[board[x - 1, y + 1][0]] + capture_bonus + mp_val + bonus,
-                                (x, y),
-                                (x - 1, y + 1)
-                            ])
-                if y - 1 >= 0:
-                    if board[x - 1, y - 1] != "" and board[x - 1, y - 1] != "X":
-                        if board[x - 1, y - 1][1] != color:
-                            bonus = move_pos_delta("p", (x, y), (x - 1, y - 1), enemies_remaining)
-                            bonus += double_pawn_penalty(board, (x - 1, y - 1), color)
-                            capture_bonus = enemy_threat_bonus.get((x - 1, y - 1), 0)
-                            pawnMoves.append([
-                                basePieceValues[board[x - 1, y - 1][0]] + capture_bonus + mp_val + bonus,
-                                (x, y),
-                                (x - 1, y - 1)
-                            ])
-
+                if x - 1 >= 0:
+                    if is_empty(x - 1, y):
+                        pawnMoves.append(((x, y), (x - 1, y)))
+                    if y + 1 <= 7 and is_enemy(x - 1, y + 1):
+                        pawnMoves.append(((x, y), (x - 1, y + 1)))
+                    if y - 1 >= 0 and is_enemy(x - 1, y - 1):
+                        pawnMoves.append(((x, y), (x - 1, y - 1)))
             return pawnMoves
 
         def getKnightMoves(x, y):
-            mn_val = moveValues["mn"]
             knightMoves = []
             potentialMoves = [
                 (x + 2, y + 1),
@@ -727,150 +724,103 @@ def minMaxBot(player_sequence, board, time_budget, **kwargs):
             ]
             for move in potentialMoves:
                 if isInBounds(move[0], move[1]):
-                    if board[move[0], move[1]] == "" :
-                        bonus = move_pos_delta("n", (x, y), (move[0], move[1]), enemies_remaining)
-                        knightMoves.append([mn_val + bonus, (x, y), (move[0], move[1])])
-                    elif board[move[0], move[1]] == "X":
-                        pass
-                    elif board[move[0], move[1]][1] != color:
-                        bonus = move_pos_delta("n", (x, y), (move[0], move[1]), enemies_remaining)
-                        capture_bonus = enemy_threat_bonus.get((move[0], move[1]), 0)
-                        knightMoves.append([
-                            basePieceValues[board[move[0], move[1]][0]] + capture_bonus + mn_val + bonus,
-                            (x, y),
-                            (move[0], move[1])
-                        ])
+                    if board[move[0], move[1]] == "" or is_enemy(move[0], move[1]):
+                        knightMoves.append(((x, y), (move[0], move[1])))
             return knightMoves
 
         def getRookMoves(x, y, isQueen=False):
             rookMoves = []
-            mr_val = moveValues["mr"] if not isQueen else moveValues["mq"]
-            piece = "q" if isQueen else "r"
-            # Up
             for i in range(x + 1, 8):
                 if board[i, y] == "":
-                    bonus = move_pos_delta(piece, (x, y), (i, y), enemies_remaining)
-                    rookMoves.append([mr_val + bonus, (x, y), (i, y)])
+                    rookMoves.append(((x, y), (i, y)))
                 elif board[i, y] == "X":
                     break
-                elif board[i, y][1] != color:
-                    bonus = move_pos_delta(piece, (x, y), (i, y), enemies_remaining)
-                    capture_bonus = enemy_threat_bonus.get((i, y), 0)
-                    rookMoves.append([basePieceValues[board[i, y][0]] + capture_bonus + mr_val + bonus, (x, y), (i, y)])
+                elif is_enemy(i, y):
+                    rookMoves.append(((x, y), (i, y)))
                     break
                 else:
                     break
-            # Down
             for i in range(x - 1, -1, -1):
                 if board[i, y] == "":
-                    bonus = move_pos_delta(piece, (x, y), (i, y), enemies_remaining)
-                    rookMoves.append([mr_val + bonus, (x, y), (i, y)])
+                    rookMoves.append(((x, y), (i, y)))
                 elif board[i, y] == "X":
                     break
-                elif board[i, y][1] != color:
-                    bonus = move_pos_delta(piece, (x, y), (i, y), enemies_remaining)
-                    capture_bonus = enemy_threat_bonus.get((i, y), 0)
-                    rookMoves.append([basePieceValues[board[i, y][0]] + capture_bonus + mr_val + bonus, (x, y), (i, y)])
+                elif is_enemy(i, y):
+                    rookMoves.append(((x, y), (i, y)))
                     break
                 else:
                     break
-            # Right
             for j in range(y + 1, 8):
                 if board[x, j] == "":
-                    bonus = move_pos_delta(piece, (x, y), (x, j), enemies_remaining)
-                    rookMoves.append([mr_val + bonus, (x, y), (x, j)])
+                    rookMoves.append(((x, y), (x, j)))
                 elif board[x, j] == "X":
                     break
-                elif board[x, j][1] != color:
-                    bonus = move_pos_delta(piece, (x, y), (x, j), enemies_remaining)
-                    capture_bonus = enemy_threat_bonus.get((x, j), 0)
-                    rookMoves.append([basePieceValues[board[x, j][0]] + capture_bonus + mr_val + bonus, (x, y), (x, j)])
+                elif is_enemy(x, j):
+                    rookMoves.append(((x, y), (x, j)))
                     break
                 else:
                     break
-            # Left
             for j in range(y - 1, -1, -1):
                 if board[x, j] == "":
-                    bonus = move_pos_delta(piece, (x, y), (x, j), enemies_remaining)
-                    rookMoves.append([mr_val + bonus, (x, y), (x, j)])
+                    rookMoves.append(((x, y), (x, j)))
                 elif board[x, j] == "X":
                     break
-                elif board[x, j][1] != color:
-                    bonus = move_pos_delta(piece, (x, y), (x, j), enemies_remaining)
-                    capture_bonus = enemy_threat_bonus.get((x, j), 0)
-                    rookMoves.append([basePieceValues[board[x, j][0]] + capture_bonus + mr_val + bonus, (x, y), (x, j)])
+                elif is_enemy(x, j):
+                    rookMoves.append(((x, y), (x, j)))
                     break
                 else:
                     break
             return rookMoves
 
         def getBishopMoves(x, y, isQueen=False):
-            mb_val = moveValues["mb"] if not isQueen else moveValues["mq"]
             bishopMoves = []
-            piece = "q" if isQueen else "b"
-            # Up-Right
             i, j = x + 1, y + 1
             while isInBounds(i, j):
                 if board[i, j] == "":
-                    bonus = move_pos_delta(piece, (x, y), (i, j), enemies_remaining)
-                    bishopMoves.append([mb_val + bonus, (x, y), (i, j)])
+                    bishopMoves.append(((x, y), (i, j)))
                 elif board[i, j] == "X":
                     break
-                elif board[i, j][1] != color:
-                    bonus = move_pos_delta(piece, (x, y), (i, j), enemies_remaining)
-                    capture_bonus = enemy_threat_bonus.get((i, j), 0)
-                    bishopMoves.append([basePieceValues[board[i, j][0]] + capture_bonus + mb_val + bonus, (x, y), (i, j)])
+                elif is_enemy(i, j):
+                    bishopMoves.append(((x, y), (i, j)))
                     break
                 else:
                     break
                 i += 1
                 j += 1
-            # Up-Left
             i, j = x + 1, y - 1
             while isInBounds(i, j):
                 if board[i, j] == "":
-                    bonus = move_pos_delta(piece, (x, y), (i, j), enemies_remaining)
-                    bishopMoves.append([mb_val + bonus, (x, y), (i, j)])
+                    bishopMoves.append(((x, y), (i, j)))
                 elif board[i, j] == "X":
                     break
-                elif board[i, j][1] != color:
-                    bonus = move_pos_delta(piece, (x, y), (i, j), enemies_remaining)
-                    capture_bonus = enemy_threat_bonus.get((i, j), 0)
-                    bishopMoves.append([basePieceValues[board[i, j][0]] + capture_bonus + mb_val + bonus, (x, y), (i, j)])
+                elif is_enemy(i, j):
+                    bishopMoves.append(((x, y), (i, j)))
                     break
                 else:
                     break
                 i += 1
                 j -= 1
-            # Down-Right
             i, j = x - 1, y + 1
             while isInBounds(i, j):
                 if board[i, j] == "":
-                    bonus = move_pos_delta(piece, (x, y), (i, j), enemies_remaining)
-                    bishopMoves.append([mb_val + bonus, (x, y), (i, j)])
+                    bishopMoves.append(((x, y), (i, j)))
                 elif board[i, j] == "X":
                     break
-                elif board[i, j][1] != color:
-                    bonus = move_pos_delta(piece, (x, y), (i, j), enemies_remaining)
-                    capture_bonus = enemy_threat_bonus.get((i, j), 0)
-                    bishopMoves.append([basePieceValues[board[i, j][0]] + capture_bonus + mb_val + bonus, (x, y), (i, j)])
+                elif is_enemy(i, j):
+                    bishopMoves.append(((x, y), (i, j)))
                     break
                 else:
                     break
                 i -= 1
                 j += 1
-            # Down-Left
             i, j = x - 1, y - 1
             while isInBounds(i, j):
                 if board[i, j] == "":
-                    bonus = move_pos_delta(piece, (x, y), (i, j), enemies_remaining)
-                    bishopMoves.append([mb_val + bonus, (x, y), (i, j)])
+                    bishopMoves.append(((x, y), (i, j)))
                 elif board[i, j] == "X":
                     break
-                elif board[i, j][1] != color:
-                    bonus = move_pos_delta(piece, (x, y), (i, j), enemies_remaining)
-                    capture_bonus = enemy_threat_bonus.get((i, j), 0)
-                    bishopMoves.append([basePieceValues[board[i, j][0]] + capture_bonus + mb_val + bonus, (x, y), (i, j)])
+                elif is_enemy(i, j):
+                    bishopMoves.append(((x, y), (i, j)))
                     break
                 else:
                     break
@@ -885,7 +835,6 @@ def minMaxBot(player_sequence, board, time_budget, **kwargs):
             return queenMoves
 
         def getKingMoves(x, y):
-            mk_val = moveValues["mk"]
             kingMoves = []
             potentialMoves = [
                 (x + 1, y),
@@ -899,19 +848,8 @@ def minMaxBot(player_sequence, board, time_budget, **kwargs):
             ]
             for move in potentialMoves:
                 if isInBounds(move[0], move[1]):
-                    if board[move[0], move[1]] == "" :
-                        bonus = move_pos_delta("k", (x, y), (move[0], move[1]), enemies_remaining)
-                        kingMoves.append([mk_val + bonus, (x, y), (move[0], move[1])])
-                    elif board[move[0], move[1]] == "X":
-                        pass
-                    elif board[move[0], move[1]][1] != color:
-                        bonus = move_pos_delta("k", (x, y), (move[0], move[1]), enemies_remaining)
-                        capture_bonus = enemy_threat_bonus.get((move[0], move[1]), 0)
-                        kingMoves.append([
-                            basePieceValues[board[move[0], move[1]][0]] + capture_bonus + mk_val + bonus,
-                            (x, y),
-                            (move[0], move[1])
-                        ])
+                    if board[move[0], move[1]] == "" or is_enemy(move[0], move[1]):
+                        kingMoves.append(((x, y), (move[0], move[1])))
             return kingMoves
 
         for x in range(board.shape[0]):
@@ -922,17 +860,17 @@ def minMaxBot(player_sequence, board, time_budget, **kwargs):
                     continue
                 match board[x, y][0]:
                     case "p":
-                        everyPossibleMove.extend(apply_attack_malus(getPawnMoves(x, y), "p", (x, y), color))
+                        everyPossibleMove.extend(getPawnMoves(x, y))
                     case "n":
-                        everyPossibleMove.extend(apply_attack_malus(getKnightMoves(x, y), "n", (x, y), color))
+                        everyPossibleMove.extend(getKnightMoves(x, y))
                     case "r":
-                        everyPossibleMove.extend(apply_attack_malus(getRookMoves(x, y), "r", (x, y), color))
+                        everyPossibleMove.extend(getRookMoves(x, y))
                     case "b":
-                        everyPossibleMove.extend(apply_attack_malus(getBishopMoves(x, y), "b", (x, y), color))
+                        everyPossibleMove.extend(getBishopMoves(x, y))
                     case "q":
-                        everyPossibleMove.extend(apply_attack_malus(getQueenMoves(x, y), "q", (x, y), color))
+                        everyPossibleMove.extend(getQueenMoves(x, y))
                     case "k":
-                        everyPossibleMove.extend(apply_attack_malus(getKingMoves(x, y), "k", (x, y), color))
+                        everyPossibleMove.extend(getKingMoves(x, y))
                     case _:
                         pass
         return everyPossibleMove
@@ -940,13 +878,18 @@ def minMaxBot(player_sequence, board, time_budget, **kwargs):
     
     def createNewBoard(board, nextMove): # creates a new board from one move
         new_board = board.copy()                    # Avoids modifying actual board
-        new_board[nextMove[2]] = board[nextMove[1]] # This moves the piece to it's dest.
-        new_board[nextMove[1]] = ""                 # The cell we moved from is now empty
+        start, dest = nextMove
+        piece = board[start]
+        if piece != "" and piece != "X" and piece[0] == "p":
+            if (piece[1] == our_color and dest[0] == 7) or (piece[1] == enemy_color and dest[0] == 0):
+                piece = "q" + piece[1]
+        new_board[dest] = piece                     # This moves the piece to it's dest.
+        new_board[start] = ""                       # The cell we moved from is now empty
         return new_board
 
     def alpha_beta(board, depth, alpha, beta, maximizing_player):
         if depth == 0:
-            return evaluate_board(board)
+            return quiescence(board, alpha, beta, maximizing_player)
 
         if time.time() - startTime >= time_budget - 0.03:
             raise TimeoutError("time budget exceeded")
@@ -996,14 +939,17 @@ def minMaxBot(player_sequence, board, time_budget, **kwargs):
                 break
             if rootBestScore > bestScoreThisDepth:
                 bestScoreThisDepth = rootBestScore
-                bestMoveThisDepth = [rootMove[1], rootMove[2]]
+                bestMoveThisDepth = [rootMove[0], rootMove[1]]
         if bestScoreThisDepth != -math.inf:
             bestPossibleScore = bestScoreThisDepth
             bestPossibleMove = bestMoveThisDepth
         depth += 1
 
     
+    final_board = createNewBoard(board, (bestPossibleMove[0], bestPossibleMove[1]))
+    final_score, score_details = evaluate_board_components(final_board)
     print("Final move for this board:", bestPossibleMove[0], " to -> ", bestPossibleMove[1],", with a score of", bestPossibleScore, ". This took:", time.time()-startTime, " seconds !")
+    print("Score details:", score_details, "total:", final_score)
     return bestPossibleMove[0], bestPossibleMove[1]
 
 
