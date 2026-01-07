@@ -188,9 +188,9 @@ def chess_bot(player_sequence, board, time_budget, **kwargs):
     )
 
     # Write stats to CSV file
-    file_exists = os.path.isfile("StatsCSVFile")
+    file_exists = os.path.isfile("StatsChaiseCSVFile")
 
-    with open("StatsCSVFile", mode="a", newline="") as file:
+    with open("StatsChaiseCSVFile", mode="a", newline="") as file:
         writer = csv.writer(file)
         # Write header only once
         if not file_exists:

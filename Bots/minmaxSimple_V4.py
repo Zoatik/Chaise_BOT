@@ -2,9 +2,12 @@ from Bots.ChessBotList import register_chess_bot
 
 import time
 import math
+import csv
+import os
 
 def minMaxBot(player_sequence, board, time_budget, **kwargs):
     startTime = time.time()
+    stats = Stats()
     # player_squence => [teamid|color|boardorientation]
 
     # board          => 2x2 array containing either: 
@@ -513,10 +516,12 @@ def minMaxBot(player_sequence, board, time_budget, **kwargs):
             alpha = max(alpha, stand_pat)
             moves = order_moves(board, get_capture_moves(board, our_color), our_color, reverse=True)
             for move in moves:
+                stats.q_nodes += 1
                 new_board = createNewBoard(board, move)
                 score = quiescence(new_board, alpha, beta, False)
                 alpha = max(alpha, score)
                 if alpha >= beta:
+                    stats.cutoffs += 1
                     break
             return alpha
 
@@ -525,10 +530,12 @@ def minMaxBot(player_sequence, board, time_budget, **kwargs):
         beta = min(beta, stand_pat)
         moves = order_moves(board, get_capture_moves(board, enemy_color), enemy_color, reverse=False)
         for move in moves:
+            stats.q_nodes += 1
             new_board = createNewBoard(board, move)
             score = quiescence(new_board, alpha, beta, True)
             beta = min(beta, score)
             if alpha >= beta:
+                stats.cutoffs += 1
                 break
         return beta
 
@@ -898,22 +905,26 @@ def minMaxBot(player_sequence, board, time_budget, **kwargs):
             value = -math.inf
             moves = order_moves(board, getAllMoves(board, our_color), our_color, reverse=True)
             for nextMove in moves:
+                stats.nodes += 1
                 new_board = createNewBoard(board, nextMove)
                 score = alpha_beta(new_board, depth - 1, alpha, beta, False)
                 value = max(value, score)
                 alpha = max(alpha, value)
                 if alpha >= beta:
+                    stats.cutoffs += 1
                     break
             return value
 
         value = math.inf
         moves = order_moves(board, getAllMoves(board, enemy_color), enemy_color, reverse=False)
         for nextMove in moves:
+            stats.nodes += 1
             new_board = createNewBoard(board, nextMove)
             score = alpha_beta(new_board, depth - 1, alpha, beta, True)
             value = min(value, score)
             beta = min(beta, value)
             if alpha >= beta:
+                stats.cutoffs += 1
                 break
         return value
     
@@ -932,6 +943,7 @@ def minMaxBot(player_sequence, board, time_budget, **kwargs):
         for rootMove in rootMoves:
             if time.time() - startTime >= time_budget - 0.05:
                 break
+            stats.nodes += 1
             new_board = createNewBoard(board, rootMove)
             try:
                 rootBestScore = alpha_beta(new_board, depth - 1, -math.inf, math.inf, False)
@@ -948,29 +960,54 @@ def minMaxBot(player_sequence, board, time_budget, **kwargs):
     
     final_board = createNewBoard(board, (bestPossibleMove[0], bestPossibleMove[1]))
     final_score, score_details = evaluate_board_components(final_board)
-    print("Final move for this board:", bestPossibleMove[0], " to -> ", bestPossibleMove[1],", with a score of", bestPossibleScore, ". This took:", time.time()-startTime, " seconds !")
+    finalTime = time.time()-startTime
+    print("Final move for this board:", bestPossibleMove[0], " to -> ", bestPossibleMove[1],", with a score of", bestPossibleScore, ". This took:", finalTime, " seconds !")
     print("Score details:", score_details, "total:", final_score)
+
+    # Write stats to CSV file
+    file_exists = os.path.isfile("StatsChaiseV4CSVFile")
+
+    with open("StatsChaiseV4CSVFile", mode="a", newline="") as file:
+        writer = csv.writer(file)
+        # Write header only once
+        if not file_exists:
+            writer.writerow([
+                "Total nodes visited",
+                "Total quiescence nodes",
+                "Alpha-beta cutoffs",
+                "Alpha-beta improvement",
+                "Nodes per second",
+                "Total time"
+            ])
+        writer.writerow([
+            stats.nodes+stats.q_nodes,
+            stats.q_nodes,
+            stats.cutoffs,
+            math.floor(stats.cutoffs/(stats.nodes+stats.q_nodes)*100),
+            round((stats.nodes+stats.q_nodes)/finalTime, 2)
+        ])
+    print(
+        "--- Stats ---           ", "\n",
+        "Total nodes visited:    ", stats.nodes+stats.q_nodes, "\n",
+        "Total quiescence nodes: ", stats.q_nodes, "\n",
+        "Alpha-beta cutoffs:     ", stats.cutoffs, "\n",
+        "Alpha-beta improvement: ", math.floor(stats.cutoffs/(stats.nodes+stats.q_nodes)*100), "%\n",
+        "Nodes per second:       ", round((stats.nodes+stats.q_nodes)/finalTime, 2), "\n"
+    )
+    
+
+
     return bestPossibleMove[0], bestPossibleMove[1]
 
 
 register_chess_bot("MinMax_V4", minMaxBot)
 
 
+class Stats:
+ def __init__(self):
+        self.nodes = 0
+        self.q_nodes = 0
+        self.cutoffs = 0
+        
+
 # Notes:
-# Have to implement, alpha-beta pruning to speed up the process.
-#
-# After thinking a bit.. I don't think that I did standard minMax
-# algorithm correctly. I gave the score as one of it's arguments
-# but then I can't do anything with the final state and apply
-# pruning on it.
-# I think I have to have a board that has a score on it's own
-# instead of a path accumulated score.
-# I decided to go with the path accumulated score because we
-# assigned points to the moves and thought if we remove that,
-# then our entire grid preference placements for each piece
-# would be revoked.
-# So might simply try to optimize this current version,
-# instead of removing a core element to our concept.
-
-
-# also, at line 561 for the enemy's score dunno +-.
