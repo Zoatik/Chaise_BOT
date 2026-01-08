@@ -11,10 +11,13 @@
 import math
 import time
 from Bots.ChessBotList import register_chess_bot
+import csv
+import os
 
 #   Simply move the pawns forward and tries to capture as soon as possible
 def chess_bot(player_sequence, board, time_budget, **kwargs):
     startTime = time.time()
+    stats = Stats()
 
     def get_capture_moves(b, color, perspective_color):
         caps = []
@@ -43,11 +46,13 @@ def chess_bot(player_sequence, board, time_budget, **kwargs):
             for mv in moves:
                 if Utils.time_up(start_time=startTime, time_budget=time_budget, margin=0.03):
                     raise TimeoutError("time budget exceeded")
+                stats.q_nodes += 1
                 nb = Utils.create_new_board(b, mv)
                 next_stm = 'w' if stm_color == 'b' else 'b'
                 score = quiescence(nb, next_stm, alpha, beta)
                 alpha = max(alpha, score)
                 if alpha >= beta:
+                    stats.cutoffs += 1
                     break
             return alpha
         else:
@@ -60,11 +65,13 @@ def chess_bot(player_sequence, board, time_budget, **kwargs):
             for mv in moves:
                 if Utils.time_up(start_time=startTime, time_budget=time_budget, margin=0.03):
                     raise TimeoutError("time budget exceeded")
+                stats.q_nodes += 1
                 nb = Utils.create_new_board(b, mv)
                 next_stm = 'w' if stm_color == 'b' else 'b'
                 score = quiescence(nb, next_stm, alpha, beta)
                 beta = min(beta, score)
                 if alpha >= beta:
+                    stats.cutoffs += 1
                     break
             return beta
 
@@ -85,11 +92,15 @@ def chess_bot(player_sequence, board, time_budget, **kwargs):
             for mv in moves:
                 if Utils.time_up(start_time=startTime, time_budget=time_budget, margin=0.03):
                     raise TimeoutError("time budget exceeded")
+                
+                stats.nodes += 1
+
                 nb = Utils.create_new_board(b, mv)
                 next_stm = 'w' if stm_color == 'b' else 'b'
                 value = max(value, alpha_beta(nb, next_stm, depth - 1, alpha, beta))
                 alpha = max(alpha, value)
                 if alpha >= beta:
+                    stats.cutoffs += 1
                     break
             return value
         else:
@@ -97,11 +108,15 @@ def chess_bot(player_sequence, board, time_budget, **kwargs):
             for mv in moves:
                 if Utils.time_up(start_time=startTime, time_budget=time_budget, margin=0.03):
                     raise TimeoutError("time budget exceeded")
+                
+                stats.nodes += 1
+
                 nb = Utils.create_new_board(b, mv)
                 next_stm = 'w' if stm_color == 'b' else 'b'
                 value = min(value, alpha_beta(nb, next_stm, depth - 1, alpha, beta))
                 beta = min(beta, value)
                 if alpha >= beta:
+                    stats.cutoffs += 1
                     break
             return value
         
@@ -163,18 +178,63 @@ def chess_bot(player_sequence, board, time_budget, **kwargs):
     final_board = Utils.create_new_board(root_board, (bestPossibleMove[0], bestPossibleMove[1]))
     final_score = Utils.evaluateBoard(final_board, perspective_color=player_color)
 
+    finalTime = time.time()-startTime
     print(
         "Final move for this board:",
         bestPossibleMove[0], "to ->", bestPossibleMove[1],
         ", with a score of", bestPossibleScore,
-        ". This took:", time.time() - startTime, "seconds!",
+        ". This took:", finalTime, "seconds!",
         " With a depth of:", depth - 1,". Final eval:", final_score
+    )
+
+    # Write stats to CSV file
+    file_exists = os.path.isfile("StatsChaiseCSVFile")
+
+    with open("StatsChaiseCSVFile", mode="a", newline="") as file:
+        writer = csv.writer(file)
+        # Write header only once
+        if not file_exists:
+            writer.writerow([
+                "Total nodes visited",
+                "Total quiescence nodes",
+                "Alpha-beta cutoffs",
+                "Alpha-beta improvement",
+                "Nodes per second"
+            ])
+        writer.writerow([
+            stats.nodes+stats.q_nodes,
+            stats.q_nodes,
+            stats.cutoffs,
+            math.floor(stats.cutoffs/(stats.nodes+stats.q_nodes)*100),
+            round((stats.nodes+stats.q_nodes)/finalTime, 2)
+        ])
+    print(
+        "--- Stats ---           ", "\n",
+        "Total nodes visited:    ", stats.nodes+stats.q_nodes, "\n",
+        "Total quiescence nodes: ", stats.q_nodes, "\n",
+        "Alpha-beta cutoffs:     ", stats.cutoffs, "\n",
+        "Alpha-beta improvement: ", math.floor(stats.cutoffs/(stats.nodes+stats.q_nodes)*100), "%\n",
+        "Nodes per second:       ", round((stats.nodes+stats.q_nodes)/finalTime, 2), "\n",
     )
 
     return bestPossibleMove[0], bestPossibleMove[1]
 
 #   Example how to register the function
 register_chess_bot("ChaiseBot", chess_bot)
+
+
+
+
+
+class Stats:
+ def __init__(self):
+        self.nodes = 0
+        self.q_nodes = 0
+        self.cutoffs = 0
+
+
+
+
 
 class Utils:
     basePieceValues = {
@@ -330,6 +390,9 @@ class Utils:
             ]
         }
     }
+
+
+
 
     @classmethod
     def piece_pos_bonus(cls, pieceType, pos, enemies_remaining):
@@ -664,6 +727,4 @@ class Utils:
         nb[start] = "" 
 
         return nb
-
-
 
